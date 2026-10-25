@@ -5,13 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#0b1020" />
     <title>Nova — WebXR Passthrough</title>
+    <link rel="icon" href="data:," />
     <link rel="stylesheet" href="/css/style.css" />
     <script type="importmap">
       {
         "imports": {
-          "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
-          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
-          "cannon-es": "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js"
+          "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
+          "cannon-es": "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js",
+          "@pixiv/three-vrm": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.4.5/lib/three-vrm.module.min.js"
         }
       }
     </script>
@@ -20,23 +22,79 @@
     <div id="hud">
       <header>
         <h1>Nova</h1>
-        <p id="status">Stelle eine sichere HTTPS-Verbindung her und starte AR.</p>
+        <span id="version" class="muted"></span>
+        <button id="hud-toggle" type="button" class="ghost" aria-label="Panel ein-/ausklappen">☰</button>
       </header>
-      <div class="actions">
-        <button id="enter-ar" type="button">AR starten (immersive-ar)</button>
-        <button id="toggle-mode" type="button" disabled>Modus: Platzieren</button>
-        <button id="reset" type="button" disabled>Figur zurücksetzen</button>
+      <p id="status" role="status" aria-live="polite">Lade …</p>
+
+      <div class="hud-body">
+        <button id="enter-ar" type="button" class="primary">AR starten (immersive-ar)</button>
+
+        <div class="segmented" role="group" aria-label="Modus">
+          <button type="button" data-mode="place" aria-pressed="true" class="active">Platzieren</button>
+          <button type="button" data-mode="interact" aria-pressed="false">Interaktion</button>
+        </div>
+        <button id="reset" type="button" disabled>Figur aufstellen</button>
+
+        <label class="field">
+          <span>Modell</span>
+          <select id="model-select"></select>
+        </label>
+
+        <details id="model-manager">
+          <summary>Modelle verwalten &amp; hochladen</summary>
+          <ul id="model-list"></ul>
+          <form id="upload-form" autocomplete="off">
+            <label class="field">
+              <span>Datei</span>
+              <input id="upload-file" type="file" accept=".glb,.gltf,.vrm,model/gltf-binary,model/gltf+json" required />
+            </label>
+            <label class="field">
+              <span>Name</span>
+              <input id="upload-name" type="text" maxlength="80" placeholder="optional" />
+            </label>
+            <label class="field">
+              <span>Token</span>
+              <input id="upload-token" type="password" placeholder="UPLOAD_TOKEN" autocomplete="off" />
+            </label>
+            <label class="check"><input id="upload-remember" type="checkbox" /> Token in diesem Browser merken</label>
+            <button id="upload-submit" type="submit" class="primary">Hochladen</button>
+            <progress id="upload-progress" max="1" value="0" hidden></progress>
+            <p id="upload-hint" class="muted"></p>
+          </form>
+        </details>
+
+        <details>
+          <summary>Bedienung</summary>
+          <h3>Quest – Controller</h3>
+          <ul class="help">
+            <li><b>Trigger</b> kurz: Figur dorthin setzen · halten + seitlich ziehen: drehen</li>
+            <li><b>Thumbstick</b> links/rechts: drehen · vor/zurück: verschieben</li>
+            <li><b>Grip</b> halten: Figur am Boden mitziehen</li>
+            <li><b>A/X</b>: Modus wechseln · <b>B/Y</b>: Figur aufstellen</li>
+            <li>Interaktion: Trigger auf die Figur = Stoß, Grip + Trigger = starker Stoß</li>
+          </ul>
+          <h3>Quest – Hand-Tracking</h3>
+          <ul class="help">
+            <li><b>Pinch</b> kurz: setzen · Pinch halten + Hand seitlich bewegen: drehen</li>
+            <li>Linke Hand anheben: Menü am Handgelenk – mit dem rechten Zeigefinger antippen oder per Pinch wählen</li>
+            <li>Interaktion: Figur mit Hand/Fingern anschubsen</li>
+          </ul>
+          <h3>Desktop</h3>
+          <ul class="help">
+            <li>Klick: setzen · Ziehen: drehen · Q/E: drehen · Leertaste: Modus · R: aufstellen · N: nächstes Modell</li>
+            <li>Rechte Maustaste: Kamera drehen · Mausrad: Zoom</li>
+            <li>Interaktion: Klick auf die Figur = Stoß, Shift + Klick = starker Stoß</li>
+          </ul>
+        </details>
+
+        <dl id="meta">
+          <div><dt>Session</dt><dd id="session-state">inaktiv</dd></div>
+          <div><dt>Features</dt><dd id="feature-state">—</dd></div>
+          <div><dt>Raum</dt><dd id="space-state">—</dd></div>
+          <div><dt>Figur</dt><dd id="figure-state">Idle</dd></div>
+        </dl>
       </div>
-      <dl id="meta">
-        <div><dt>Session</dt><dd id="session-state">inaktiv</dd></div>
-        <div><dt>Features</dt><dd id="feature-state">—</dd></div>
-        <div><dt>Raum</dt><dd id="space-state">kein Scan</dd></div>
-      </dl>
-      <ol class="help">
-        <li>Quest-Browser: Raum einrichten, dann „AR starten“.</li>
-        <li>Platzieren: Trigger/Pinch auf den Boden, Stick/Swipe dreht.</li>
-        <li>Interaktion: Button oder A/X — Ragdoll, Hände und Controller schubsen.</li>
-      </ol>
     </div>
     <script type="module" src="/js/main.js"></script>
   </body>
