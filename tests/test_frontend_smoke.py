@@ -46,6 +46,13 @@ def test_no_sexualized_content_markers():
     assert "nsfw" not in html.lower()
 
 
+def test_active_ragdoll_muscles_present():
+    physics = (FRONTEND / "js" / "physics.js").read_text(encoding="utf-8")
+    assert "applyMuscles" in physics
+    assert "kpPos" in physics
+    assert "standKp" in physics
+
+
 def test_upload_ui_present():
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
     assert 'id="model-form"' in html

@@ -47,7 +47,7 @@ function setMode(next) {
     character.stopIdle();
     physics.syncFromBones();
     physics.setEnabled(true);
-    setStatus("Ragdoll aktiv. Hände oder Controller berühren die Figur.");
+    setStatus("Active Ragdoll: steht mit Muskeln, Schubsen weicht aus und richtet sich wieder auf.");
   } else {
     physics.setEnabled(false);
     character.playIdle();

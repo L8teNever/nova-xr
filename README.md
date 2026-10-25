@@ -10,7 +10,7 @@ WebXR braucht HTTPS (oder localhost). Die öffentliche Basis-URL gehört nur in 
 - Optionale WebXR-Features: `plane-detection`, `mesh-detection`, `hit-test`, `anchors`, `hand-tracking`.
 - Raum-Scan (Boden/Wände/Meshes) als Kollisionsflächen. Fehlen die Features: Fallback-Bodenebene.
 - Modus **Platzieren**: Raycast + Hit-Test, Drehen, XR-Anchor.
-- Modus **Interaktion**: Ganzkörper-Ragdoll, Kollision mit Händen/Controllern und Raumflächen. Zurück in Platzieren stellt die Figur wieder hin (Idle).
+- Modus **Interaktion**: Active Ragdoll (PD-Muskeln, Pose-Following + Hüft-Balance). Die Figur bleibt stehen, weicht bei Schubsen nach und richtet sich wieder auf. Kollision mit Händen/Controllern und Raumflächen.
 - Sekundärbewegung für Haar/Kleidung nur, wenn Vertices sauber isolierbar sind — siehe Abschnitt „Modell und Grenzen“.
 
 ## Modell und Lizenz
