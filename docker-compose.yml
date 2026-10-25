@@ -1,11 +1,16 @@
 services:
   nova:
-    image: ghcr.io/l8tenever/nova-xr:latest
+    image: ghcr.io/l8tenever/nova-xr-app:latest
     pull_policy: always
     ports:
       - "${NOVA_PORT:-8080}:8080"
     environment:
-      GIT_COMMIT: ${GIT_COMMIT:-unknown}
+      UPLOAD_TOKEN: ${UPLOAD_TOKEN:-}
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-100}
+      MAX_MODELS: ${MAX_MODELS:-50}
+      NOVA_MODELS_DIR: /data/models
+    volumes:
+      - nova-models:/data/models
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')"]
@@ -13,3 +18,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+
+volumes:
+  nova-models:

@@ -1,0 +1,14 @@
+{
+  "name": "nova-xr-frontend-tests",
+  "private": true,
+  "type": "module",
+  "description": "Dev-only: lets Node tests import the same three.js / cannon-es versions the browser loads via importmap.",
+  "scripts": {
+    "test": "node --test frontend/tests/*.test.mjs"
+  },
+  "devDependencies": {
+    "@pixiv/three-vrm": "3.4.5",
+    "cannon-es": "0.20.0",
+    "three": "0.180.0"
+  }
+}

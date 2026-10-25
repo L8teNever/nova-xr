@@ -13,8 +13,13 @@ def test_required_frontend_files_exist():
         FRONTEND / "js" / "main.js",
         FRONTEND / "js" / "scene.js",
         FRONTEND / "js" / "character.js",
-        FRONTEND / "js" / "physics.js",
+        FRONTEND / "js" / "physics-world.js",
+        FRONTEND / "js" / "active-ragdoll.js",
+        FRONTEND / "js" / "humanoid-map.js",
         FRONTEND / "js" / "xr-session.js",
+        FRONTEND / "js" / "xr-menu.js",
+        FRONTEND / "js" / "models-ui.js",
+        FRONTEND / "js" / "api.js",
         FRONTEND / "assets" / "models" / "character.glb",
         FRONTEND / "assets" / "models" / "LICENSE.txt",
     ]
@@ -39,6 +44,21 @@ def test_modes_present():
     assert "place" in main
     assert "interact" in main
     assert "ragdoll" in main.lower() or "setMode" in main
+
+
+def test_importmap_pins_matching_versions():
+    html = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    package = (ROOT / "package.json").read_text(encoding="utf-8")
+    for name, version in (("three", "0.180.0"), ("cannon-es", "0.20.0"), ("@pixiv/three-vrm", "3.4.5")):
+        assert f"{name}@{version}" in html, name
+        assert f'"{name}": "{version}"' in package, name
+
+
+def test_upload_ui_present():
+    html = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    for element_id in ("upload-form", "upload-file", "upload-token", "model-select", "model-list"):
+        assert f'id="{element_id}"' in html
+    assert ".vrm" in html
 
 
 def test_no_sexualized_content_markers():

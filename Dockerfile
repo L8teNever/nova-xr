@@ -1,14 +1,17 @@
 FROM python:3.12-slim
 
 ARG GIT_COMMIT=unknown
+ARG IMAGE_SOURCE=https://github.com/L8teNever/nova-xr
 LABEL org.opencontainers.image.revision=$GIT_COMMIT \
       org.opencontainers.image.title="Nova XR" \
-      org.opencontainers.image.source="https://github.com/l8tenever/nova-xr"
+      org.opencontainers.image.description="WebXR passthrough figure with active-ragdoll physics and model uploads" \
+      org.opencontainers.image.source=$IMAGE_SOURCE
 
 ENV GIT_COMMIT=$GIT_COMMIT \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PORT=8080
+    PORT=8080 \
+    NOVA_MODELS_DIR=/data/models
 
 WORKDIR /app
 
@@ -23,7 +26,14 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends bash ca-certificates curl \
     && rm -rf /var/lib/apt/lists/* \
     && chmod +x ./scripts/fetch-character.sh \
-    && ./scripts/fetch-character.sh ./frontend/assets/models/character.glb
+    && ./scripts/fetch-character.sh ./frontend/assets/models/character.glb \
+    && rm -rf ./frontend/tests \
+    && useradd --system --uid 10001 --home-dir /app --shell /usr/sbin/nologin nova \
+    && mkdir -p /data/models \
+    && chown -R nova:nova /data
+
+# A named volume on /data/models inherits this ownership on first use.
+USER nova
 
 EXPOSE 8080
 

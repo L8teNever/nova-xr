@@ -1,15 +1,21 @@
 character.glb
 =============
 
-Zielmodell: Grab3D „Casual Woman“ (rigged GLB)
-https://grab3d.com/models/characters/woman/
-https://grab3d.com/dl/woman-rigged/woman-rigged.glb
+Herkunft: Die mitgelieferte Datei ist byte-identisch mit
+examples/models/gltf/Soldier.glb aus dem three.js-Repository
+(https://github.com/mrdoob/three.js, Mixamo-Figur "Vanguard" mit den Clips
+Idle, Run, TPose, Walk und Mixamo-Skelett "mixamorig:*").
 
-Lizenz: CC0 1.0 Universal (Public Domain Dedication)
-Keine Attribution nötig. Siehe:
-https://creativecommons.org/publicdomain/zero/1.0/
+Frühere Versionen dieser Datei nannten fälschlich das Grab3D-Modell
+"Casual Woman" (CC0) als Quelle. Das trifft auf die eingecheckte Datei nicht zu.
 
-Das rigged GLB liefert Walk/Run, ein Mesh und Körper-/Finger-/Kopf-Joints.
-Kein Idle-Clip, keine Haar- oder Kleidungs-Bones.
+Lizenz: nicht abschließend geklärt. Mixamo-Figuren unterliegen den
+Adobe-/Mixamo-Nutzungsbedingungen; three.js verteilt die Datei als
+Beispiel-Asset. Vor einer Weiterverbreitung außerhalb dieses Demo-Projekts
+die Nutzungsbedingungen prüfen oder das Standardmodell durch ein Modell mit
+eindeutiger Lizenz (z. B. CC0) ersetzen.
 
-Die GLB liegt im Repository. scripts/fetch-character.sh lädt nur, wenn die Datei fehlt.
+scripts/fetch-character.sh lädt nur dann ein Modell herunter, wenn
+character.glb fehlt. Der dort hinterlegte Fallback ist das Grab3D-Modell
+"Casual Woman" (laut Anbieter CC0 1.0) und damit ein anderes Modell als die
+eingecheckte Datei.

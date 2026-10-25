@@ -7,14 +7,18 @@ const required = [
   "index.html",
   "js/main.js",
   "js/xr-session.js",
-  "js/physics.js",
+  "js/xr-menu.js",
+  "js/physics-world.js",
+  "js/active-ragdoll.js",
+  "js/humanoid-map.js",
   "js/character.js",
+  "js/models-ui.js",
+  "js/api.js",
   "assets/models/character.glb",
 ];
 
 for (const rel of required) {
-  const path = join(root, rel);
-  if (!existsSync(path)) {
+  if (!existsSync(join(root, rel))) {
     console.error(`missing ${rel}`);
     process.exit(1);
   }
@@ -29,8 +33,8 @@ for (const flag of ["plane-detection", "mesh-detection", "hit-test", "anchors", 
 }
 
 const html = readFileSync(join(root, "index.html"), "utf8");
-if (!html.includes("immersive-ar") || !html.includes("Nova")) {
-  console.error("index.html missing Nova / immersive-ar");
+if (!html.includes("immersive-ar") || !html.includes("Nova") || !html.includes("@pixiv/three-vrm")) {
+  console.error("index.html missing Nova / immersive-ar / three-vrm");
   process.exit(1);
 }
 
