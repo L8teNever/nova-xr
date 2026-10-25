@@ -12,5 +12,4 @@ https://creativecommons.org/publicdomain/zero/1.0/
 Das rigged GLB liefert Walk/Run, ein Mesh und Körper-/Finger-/Kopf-Joints.
 Kein Idle-Clip, keine Haar- oder Kleidungs-Bones.
 
-Das Image bzw. scripts/fetch-character.sh lädt die CC0-Datei beim Build.
-Liegt lokal eine ältere Platzhalter-GLB, bitte das Script ausführen.
+Die GLB liegt im Repository. scripts/fetch-character.sh lädt nur, wenn die Datei fehlt.

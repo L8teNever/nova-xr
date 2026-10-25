@@ -18,7 +18,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY scripts/fetch-character.sh ./scripts/fetch-character.sh
 COPY app ./app
 COPY frontend ./frontend
-RUN chmod +x ./scripts/fetch-character.sh && ./scripts/fetch-character.sh ./frontend/assets/models/character.glb
+# python:*-slim has no curl (and no bash). Fetch is a fallback if the GLB is absent.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends bash ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && chmod +x ./scripts/fetch-character.sh \
+    && ./scripts/fetch-character.sh ./frontend/assets/models/character.glb
 
 EXPOSE 8080
 
