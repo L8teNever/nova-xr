@@ -10,7 +10,7 @@ WebXR braucht HTTPS (oder localhost). Die öffentliche Basis-URL gehört nur in 
 - Optionale WebXR-Features: `plane-detection`, `mesh-detection`, `hit-test`, `anchors`, `hand-tracking`.
 - Raum-Scan (Boden/Wände/Meshes) als Kollisionsflächen. Fehlen die Features: Fallback-Bodenebene.
 - Modus **Platzieren**: Raycast + Hit-Test, Drehen, XR-Anchor.
-- Modus **Interaktion**: Ganzkörper-Ragdoll, Kollision mit Händen/Controllern und Raumflächen. Zurück in Platzieren stellt die Figur wieder hin (Idle).
+- Modus **Interaktion**: Active Ragdoll (PD-Muskeln, Pose-Following + Hüft-Balance). Die Figur bleibt stehen, weicht bei Schubsen nach und richtet sich wieder auf. Kollision mit Händen/Controllern und Raumflächen.
 - Sekundärbewegung für Haar/Kleidung nur, wenn Vertices sauber isolierbar sind — siehe Abschnitt „Modell und Grenzen“.
 
 ## Modell und Lizenz
@@ -38,7 +38,10 @@ uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
 
 - Health: `GET /health`
 - Version: `GET /api/version`
+- Modell: `GET/POST/DELETE /api/model` — eigenes geriggtes GLB nur unter `NOVA_DATA_DIR` (Standard `./data`, gitignored)
 - UI: `http://127.0.0.1:8080/`
+
+Auf der Seite kannst du eine `.glb` hochladen. Der Server prüft automatisch Skelett/Skin und Animationsclips. Ohne Rig wird abgelehnt. Die Datei liegt **nur auf diesem Server** im Datenordner, nicht im Git-Repo. „Standardmodell“ löscht den Upload wieder.
 
 Tests:
 
@@ -76,7 +79,16 @@ Für eine XR-Session am PC: Immersive-Web-Emulator für Chromium installieren, `
 
 Image (öffentlich): `ghcr.io/l8tenever/nova-xr:latest` und `ghcr.io/l8tenever/nova-xr:<git-sha>`.
 
-Bei jedem Push auf `main` baut `.github/workflows/docker-publish.yml` das Image und pusht es nach GHCR. `ARG GIT_COMMIT` landet als Image-Label und `GIT_COMMIT`-Env (sichtbar unter `/api/version`).
+`.github/workflows/docker-publish.yml` läuft bei **Pull Requests** (Tests + Image-Build), bei **Push auf `main`** (Tests, Build, Push nach GHCR) und per **workflow_dispatch**. `ARG GIT_COMMIT` landet als Image-Label und Env (sichtbar unter `/api/version`).
+
+Nach einem grünen `main`-Lauf auf dem Host:
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+Uploads bleiben im Volume `NOVA_DATA_DIR` (Standard `./data`). Image-Tag optional über `NOVA_IMAGE_TAG`.
 
 `docker-compose.yml` **baut nicht lokal**, sondern zieht das GHCR-Image:
 

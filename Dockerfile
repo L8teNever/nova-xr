@@ -8,7 +8,8 @@ LABEL org.opencontainers.image.revision=$GIT_COMMIT \
 ENV GIT_COMMIT=$GIT_COMMIT \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PORT=8080
+    PORT=8080 \
+    NOVA_DATA_DIR=/app/data
 
 WORKDIR /app
 
@@ -23,7 +24,8 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends bash ca-certificates curl \
     && rm -rf /var/lib/apt/lists/* \
     && chmod +x ./scripts/fetch-character.sh \
-    && ./scripts/fetch-character.sh ./frontend/assets/models/character.glb
+    && ./scripts/fetch-character.sh ./frontend/assets/models/character.glb \
+    && mkdir -p /app/data
 
 EXPOSE 8080
 

@@ -29,6 +29,11 @@ for (const flag of ["plane-detection", "mesh-detection", "hit-test", "anchors", 
 }
 
 const html = readFileSync(join(root, "index.html"), "utf8");
+const mainJs = readFileSync(join(root, "js/main.js"), "utf8");
+if (!html.includes("model-form") || !mainJs.includes("/api/model")) {
+  console.error("upload UI missing");
+  process.exit(1);
+}
 if (!html.includes("immersive-ar") || !html.includes("Nova")) {
   console.error("index.html missing Nova / immersive-ar");
   process.exit(1);

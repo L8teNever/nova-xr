@@ -40,6 +40,25 @@ export class PhysicsWorld {
     this.controllerBodies = new Map();
     this.springs = [];
     this.enabled = false;
+    this.impact = 0;
+    this.poseTargets = new Map();
+    this.standHeight = 1.0;
+    this.standAnchor = new CANNON.Vec3();
+    // Active ragdoll: PD-Muskeln (Pose-Following + Balance).
+    // Ansatz wie Unity Humanoid ActiveRagdoll / Matter.js PD-Torque:
+    // F = Kp * (x_target - x) - Kd * v
+    // τ = Kp * θ_err - Kd * ω
+    this.muscle = {
+      kpPos: 90,
+      kdPos: 14,
+      kpRot: 28,
+      kdRot: 5,
+      standKp: 140,
+      standKd: 22,
+      maxForce: 320,
+      maxTorque: 55,
+      recoverPerSec: 0.55,
+    };
     this.ground = new CANNON.Body({
       type: CANNON.Body.STATIC,
       shape: new CANNON.Plane(),
@@ -50,10 +69,28 @@ export class PhysicsWorld {
 
   setEnabled(on) {
     this.enabled = on;
+    this.impact = 0;
+    if (on) this.syncFromBones();
     for (const body of this.bodies) {
       body.type = on ? CANNON.Body.DYNAMIC : CANNON.Body.KINEMATIC;
       body.velocity.setZero();
       body.angularVelocity.setZero();
+    }
+    if (on) this.capturePoseTargets();
+  }
+
+  capturePoseTargets() {
+    this.poseTargets.clear();
+    for (const [key, part] of this.boneBodies) {
+      this.poseTargets.set(key, {
+        position: part.body.position.clone(),
+        quaternion: part.body.quaternion.clone(),
+      });
+    }
+    const hips = this.boneBodies.get("Hips");
+    if (hips) {
+      this.standAnchor.copy(hips.body.position);
+      this.standHeight = hips.body.position.y;
     }
   }
 
@@ -89,6 +126,13 @@ export class PhysicsWorld {
   }
 
   bindCharacter(character) {
+    for (const body of this.bodies) {
+      this.world.removeBody(body);
+    }
+    for (const constraint of this.characterConstraints || []) {
+      this.world.removeConstraint(constraint);
+    }
+    this.characterConstraints = [];
     this.character = character;
     this.bodies = [];
     this.boneBodies.clear();
@@ -120,6 +164,7 @@ export class PhysicsWorld {
         twistAngle: Math.PI / 8,
       });
       this.world.addConstraint(constraint);
+      this.characterConstraints.push(constraint);
     }
 
     // Keine Haar-/Kleidungs-Spring-Bones: das Grab3D-Rig hat dafür keine Joints,
@@ -207,11 +252,93 @@ export class PhysicsWorld {
     }
     if (best) {
       best.applyImpulse(new CANNON.Vec3(impulse.x, impulse.y, impulse.z), best.position);
+      this.impact = Math.min(1, this.impact + 0.42);
     }
+  }
+
+  _clampVec(vec, max) {
+    const len = vec.length();
+    if (len > max && len > 1e-6) vec.scale(max / len, vec);
+    return vec;
+  }
+
+  _rotationErrorTorque(current, target) {
+    const inv = new CANNON.Quaternion();
+    current.inverse(inv);
+    const err = new CANNON.Quaternion();
+    target.mult(inv, err);
+    if (err.w < 0) {
+      err.x *= -1;
+      err.y *= -1;
+      err.z *= -1;
+      err.w *= -1;
+    }
+    const w = Math.max(-1, Math.min(1, err.w));
+    const angle = 2 * Math.acos(w);
+    const s = Math.sqrt(Math.max(0, 1 - w * w));
+    if (s < 1e-5 || angle < 1e-5) return new CANNON.Vec3(0, 0, 0);
+    return new CANNON.Vec3((err.x / s) * angle, (err.y / s) * angle, (err.z / s) * angle);
+  }
+
+  applyMuscles(delta) {
+    const strength = Math.max(0.12, 1 - this.impact);
+    const { kpPos, kdPos, kpRot, kdRot, standKp, standKd, maxForce, maxTorque } = this.muscle;
+
+    for (const [key, part] of this.boneBodies) {
+      const target = this.poseTargets.get(key);
+      if (!target) continue;
+      const body = part.body;
+      const posErr = new CANNON.Vec3(
+        target.position.x - body.position.x,
+        target.position.y - body.position.y,
+        target.position.z - body.position.z,
+      );
+      const force = new CANNON.Vec3(
+        (kpPos * posErr.x - kdPos * body.velocity.x) * strength,
+        (kpPos * posErr.y - kdPos * body.velocity.y) * strength,
+        (kpPos * posErr.z - kdPos * body.velocity.z) * strength,
+      );
+      this._clampVec(force, maxForce * strength);
+      body.applyForce(force, body.position);
+
+      const rotErr = this._rotationErrorTorque(body.quaternion, target.quaternion);
+      const torque = new CANNON.Vec3(
+        (kpRot * rotErr.x - kdRot * body.angularVelocity.x) * strength,
+        (kpRot * rotErr.y - kdRot * body.angularVelocity.y) * strength,
+        (kpRot * rotErr.z - kdRot * body.angularVelocity.z) * strength,
+      );
+      this._clampVec(torque, maxTorque * strength);
+      body.torque.vadd(torque, body.torque);
+    }
+
+    const hips = this.boneBodies.get("Hips");
+    if (hips) {
+      const body = hips.body;
+      const upForce = (standKp * (this.standHeight - body.position.y) - standKd * body.velocity.y) * strength;
+      const hold = new CANNON.Vec3(
+        (standKp * 0.35 * (this.standAnchor.x - body.position.x) - standKd * 0.4 * body.velocity.x) * strength,
+        Math.max(-80, Math.min(220, upForce)),
+        (standKp * 0.35 * (this.standAnchor.z - body.position.z) - standKd * 0.4 * body.velocity.z) * strength,
+      );
+      body.applyForce(hold, body.position);
+
+      const localUp = new CANNON.Vec3(0, 1, 0);
+      body.quaternion.vmult(localUp, localUp);
+      const tilt = new CANNON.Vec3(-localUp.z, 0, localUp.x);
+      const standTorque = new CANNON.Vec3();
+      tilt.scale(22 * strength, standTorque);
+      const angDamp = new CANNON.Vec3();
+      body.angularVelocity.scale(4 * strength, angDamp);
+      standTorque.vsub(angDamp, standTorque);
+      body.torque.vadd(standTorque, body.torque);
+    }
+
+    this.impact = Math.max(0, this.impact - this.muscle.recoverPerSec * delta);
   }
 
   step(delta) {
     if (!this.enabled) return;
+    this.applyMuscles(Math.min(delta, 0.05));
     this.world.step(1 / 60, Math.min(delta, 0.05), 4);
     this.applyToBones();
   }
