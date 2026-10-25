@@ -1,6 +1,6 @@
 services:
   nova:
-    image: ghcr.io/l8tenever/nova-xr:latest
+    image: ghcr.io/l8tenever/nova-xr:${NOVA_IMAGE_TAG:-latest}
     pull_policy: always
     ports:
       - "${NOVA_PORT:-8080}:8080"

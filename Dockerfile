@@ -24,7 +24,8 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends bash ca-certificates curl \
     && rm -rf /var/lib/apt/lists/* \
     && chmod +x ./scripts/fetch-character.sh \
-    && ./scripts/fetch-character.sh ./frontend/assets/models/character.glb
+    && ./scripts/fetch-character.sh ./frontend/assets/models/character.glb \
+    && mkdir -p /app/data
 
 EXPOSE 8080
 
