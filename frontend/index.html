@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0b1020" />
+    <title>Nova — WebXR Passthrough</title>
+    <link rel="stylesheet" href="/css/style.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+          "cannon-es": "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="hud">
+      <header>
+        <h1>Nova</h1>
+        <p id="status">Stelle eine sichere HTTPS-Verbindung her und starte AR.</p>
+      </header>
+      <div class="actions">
+        <button id="enter-ar" type="button">AR starten (immersive-ar)</button>
+        <button id="toggle-mode" type="button" disabled>Modus: Platzieren</button>
+        <button id="reset" type="button" disabled>Figur zurücksetzen</button>
+      </div>
+      <dl id="meta">
+        <div><dt>Session</dt><dd id="session-state">inaktiv</dd></div>
+        <div><dt>Features</dt><dd id="feature-state">—</dd></div>
+        <div><dt>Raum</dt><dd id="space-state">kein Scan</dd></div>
+      </dl>
+      <ol class="help">
+        <li>Quest-Browser: Raum einrichten, dann „AR starten“.</li>
+        <li>Platzieren: Trigger/Pinch auf den Boden, Stick/Swipe dreht.</li>
+        <li>Interaktion: Button oder A/X — Ragdoll, Hände und Controller schubsen.</li>
+      </ol>
+    </div>
+    <script type="module" src="/js/main.js"></script>
+  </body>
+</html>

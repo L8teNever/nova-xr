@@ -1,0 +1,16 @@
+character.glb
+=============
+
+Zielmodell: Grab3D „Casual Woman“ (rigged GLB)
+https://grab3d.com/models/characters/woman/
+https://grab3d.com/dl/woman-rigged/woman-rigged.glb
+
+Lizenz: CC0 1.0 Universal (Public Domain Dedication)
+Keine Attribution nötig. Siehe:
+https://creativecommons.org/publicdomain/zero/1.0/
+
+Das rigged GLB liefert Walk/Run, ein Mesh und Körper-/Finger-/Kopf-Joints.
+Kein Idle-Clip, keine Haar- oder Kleidungs-Bones.
+
+Das Image bzw. scripts/fetch-character.sh lädt die CC0-Datei beim Build.
+Liegt lokal eine ältere Platzhalter-GLB, bitte das Script ausführen.
