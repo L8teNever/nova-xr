@@ -32,6 +32,7 @@ def test_character_model_served():
     response = client.get("/assets/models/character.glb")
     assert response.status_code == 200
     assert len(response.content) > 1000
+    assert response.headers["content-type"].startswith("model/gltf-binary")
 
 
 def test_main_js_served():

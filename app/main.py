@@ -1,3 +1,4 @@
+import mimetypes
 import os
 from pathlib import Path
 
@@ -6,6 +7,8 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import __version__
+
+mimetypes.add_type("model/gltf-binary", ".glb")
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 GIT_COMMIT = os.environ.get("GIT_COMMIT", "unknown")
@@ -43,5 +46,8 @@ def frontend_asset(asset_path: str):
     except ValueError:
         return JSONResponse({"detail": "Not found"}, status_code=404)
     if candidate.is_file():
-        return FileResponse(candidate)
+        media_type = None
+        if candidate.suffix.lower() == ".glb":
+            media_type = "model/gltf-binary"
+        return FileResponse(candidate, media_type=media_type)
     return JSONResponse({"detail": "Not found"}, status_code=404)
