@@ -102,6 +102,37 @@ dd {
   color: var(--muted);
 }
 
+.upload {
+  margin: 0 0 12px;
+  padding: 10px 0 0;
+  border-top: 1px solid #ffffff22;
+}
+
+.upload label {
+  display: block;
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.upload input[type="file"] {
+  width: 100%;
+  margin-bottom: 8px;
+  color: var(--muted);
+}
+
+.upload-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+#model-info {
+  margin: 8px 0 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
 .help {
   margin: 0;
   padding-left: 18px;

@@ -38,7 +38,10 @@ uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
 
 - Health: `GET /health`
 - Version: `GET /api/version`
+- Modell: `GET/POST/DELETE /api/model` — eigenes geriggtes GLB nur unter `NOVA_DATA_DIR` (Standard `./data`, gitignored)
 - UI: `http://127.0.0.1:8080/`
+
+Auf der Seite kannst du eine `.glb` hochladen. Der Server prüft automatisch Skelett/Skin und Animationsclips. Ohne Rig wird abgelehnt. Die Datei liegt **nur auf diesem Server** im Datenordner, nicht im Git-Repo. „Standardmodell“ löscht den Upload wieder.
 
 Tests:
 

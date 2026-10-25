@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
-const MODEL_URL = "/assets/models/character.glb";
+const MODEL_URL = "/api/character.glb";
 
 export class Character {
   constructor(scene) {
@@ -23,9 +23,22 @@ export class Character {
     this.idleTime = 0;
   }
 
+  async reload() {
+    if (this.model) {
+      this.root.remove(this.model);
+      this.model = null;
+    }
+    this.bones.clear();
+    this.restPoses.clear();
+    this.clipActions.clear();
+    this.mixer = null;
+    this.ready = false;
+    return this.load();
+  }
+
   async load() {
     const loader = new GLTFLoader();
-    const gltf = await loader.loadAsync(MODEL_URL);
+    const gltf = await loader.loadAsync(`${MODEL_URL}?t=${Date.now()}`);
     this.model = gltf.scene;
     this.model.traverse((obj) => {
       if (obj.isMesh) {

@@ -272,9 +272,69 @@ renderer.setAnimationLoop((time, frame) => {
   renderer.render(scene, camera);
 });
 
+const modelInfoEl = document.getElementById("model-info");
+const modelForm = document.getElementById("model-form");
+const modelFile = document.getElementById("model-file");
+const modelReset = document.getElementById("model-reset");
+
+function describeModel(info) {
+  if (!info) return "Kein Status.";
+  const clips = (info.animations || []).join(", ") || "keine Clips";
+  const source = info.active === "custom" ? `Upload (${info.filename || "custom.glb"})` : "Standard";
+  const warn = info.warning ? ` ${info.warning}` : "";
+  return `${source}: Rig ${info.rigged ? "ja" : "nein"}, Animationen ${info.animated ? clips : "nein"}.${warn}`;
+}
+
+async function refreshModelStatus() {
+  const response = await fetch("/api/model");
+  const info = await response.json();
+  modelInfoEl.textContent = describeModel(info);
+  return info;
+}
+
+async function applyUploadedModel() {
+  await character.reload();
+  physics.bindCharacter(character);
+  if (character.anchored) {
+    placeAt(character.root.position, character.yaw);
+  }
+}
+
+modelForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const file = modelFile.files?.[0];
+  if (!file) {
+    modelInfoEl.textContent = "Bitte eine .glb wählen.";
+    return;
+  }
+  modelInfoEl.textContent = "Prüfe Rig und Animationen…";
+  const body = new FormData();
+  body.append("file", file, file.name);
+  const response = await fetch("/api/model", { method: "POST", body });
+  const info = await response.json();
+  if (!response.ok) {
+    modelInfoEl.textContent = info.detail || "Upload abgelehnt.";
+    return;
+  }
+  modelInfoEl.textContent = describeModel({ ...info, active: "custom" });
+  setStatus("Eigenes Modell liegt nur auf diesem Server.");
+  await applyUploadedModel();
+});
+
+modelReset.addEventListener("click", async () => {
+  await fetch("/api/model", { method: "DELETE" });
+  await refreshModelStatus();
+  await applyUploadedModel();
+  setStatus("Standardmodell wieder aktiv.");
+});
+
 fetch("/api/version")
   .then((res) => res.json())
   .then((info) => {
     sessionEl.dataset.commit = info.git_commit;
   })
   .catch(() => {});
+
+refreshModelStatus().catch(() => {
+  modelInfoEl.textContent = "Modellstatus nicht erreichbar.";
+});

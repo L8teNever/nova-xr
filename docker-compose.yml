@@ -6,6 +6,10 @@ services:
       - "${NOVA_PORT:-8080}:8080"
     environment:
       GIT_COMMIT: ${GIT_COMMIT:-unknown}
+      NOVA_DATA_DIR: /app/data
+      NOVA_MAX_UPLOAD_BYTES: ${NOVA_MAX_UPLOAD_BYTES:-41943040}
+    volumes:
+      - ${NOVA_DATA_DIR:-./data}:/app/data
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')"]

@@ -89,6 +89,13 @@ export class PhysicsWorld {
   }
 
   bindCharacter(character) {
+    for (const body of this.bodies) {
+      this.world.removeBody(body);
+    }
+    for (const constraint of this.characterConstraints || []) {
+      this.world.removeConstraint(constraint);
+    }
+    this.characterConstraints = [];
     this.character = character;
     this.bodies = [];
     this.boneBodies.clear();
@@ -120,6 +127,7 @@ export class PhysicsWorld {
         twistAngle: Math.PI / 8,
       });
       this.world.addConstraint(constraint);
+      this.characterConstraints.push(constraint);
     }
 
     // Keine Haar-/Kleidungs-Spring-Bones: das Grab3D-Rig hat dafür keine Joints,

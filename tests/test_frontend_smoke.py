@@ -46,6 +46,13 @@ def test_no_sexualized_content_markers():
     assert "nsfw" not in html.lower()
 
 
+def test_upload_ui_present():
+    html = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    assert 'id="model-form"' in html
+    main = (FRONTEND / "js" / "main.js").read_text(encoding="utf-8")
+    assert "/api/model" in main
+
+
 def test_public_url_is_placeholder_only():
     example = (ROOT / ".env.example").read_text(encoding="utf-8")
     assert "PUBLIC_URL=https://example.com" in example

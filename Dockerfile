@@ -8,7 +8,8 @@ LABEL org.opencontainers.image.revision=$GIT_COMMIT \
 ENV GIT_COMMIT=$GIT_COMMIT \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PORT=8080
+    PORT=8080 \
+    NOVA_DATA_DIR=/app/data
 
 WORKDIR /app
 

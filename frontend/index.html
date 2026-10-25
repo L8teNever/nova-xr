@@ -27,6 +27,15 @@
         <button id="toggle-mode" type="button" disabled>Modus: Platzieren</button>
         <button id="reset" type="button" disabled>Figur zurücksetzen</button>
       </div>
+      <form id="model-form" class="upload">
+        <label for="model-file">Eigenes GLB (nur auf diesem Server, nicht im Repo)</label>
+        <input id="model-file" type="file" accept=".glb,model/gltf-binary" />
+        <div class="upload-row">
+          <button id="model-upload" type="submit">Modell prüfen &amp; speichern</button>
+          <button id="model-reset" type="button">Standardmodell</button>
+        </div>
+        <p id="model-info">Lädt Modellstatus…</p>
+      </form>
       <dl id="meta">
         <div><dt>Session</dt><dd id="session-state">inaktiv</dd></div>
         <div><dt>Features</dt><dd id="feature-state">—</dd></div>
