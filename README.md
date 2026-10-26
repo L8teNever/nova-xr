@@ -9,11 +9,14 @@ WebXR braucht HTTPS (oder localhost). Die öffentliche Basis-URL gehört nur in 
 ## Funktionen
 
 - `immersive-ar` mit Passthrough; optionale Features `hit-test`, `plane-detection`, `mesh-detection`, `anchors`, `hand-tracking` (fehlt eines, greift ein Fallback, z. B. eine virtuelle Bodenebene).
-- **Zwei klar getrennte Modi** – *Platzieren* und *Interaktion* – umschaltbar über HUD, A/X-Taste oder das Handgelenk-Menü.
+- **Zwei klar getrennte Modi** – *Platzieren* und *Interaktion* – umschaltbar über HUD, A/X-Taste oder das VR-Menü.
+- **VR-Menü**: schwebendes Panel vor dem Blick (Thumbstick drücken oder Knopf über der linken Handfläche). Bedienbar per Laser (Controller/Pinch-Ray) oder Finger-Tippen. Inhalt: Modus, Neu platzieren (Reticle auf Boden/Flächen), Drehen (Slider + Buttons), Größe, Muskelkraft, Aufstellen, Modellliste, Schließen.
+- **Hand greifen und führen**: Grip bzw. Pinch/Faust nahe ihrer Hand (ca. 10 cm) greift sie. Ihre Hand folgt weich (kraftbegrenzter Antrieb + Arm-IK, kein Teleport), Schulter und Ellbogen gehen mit. Bei Zug macht sie Schritte hinterher, bei zu großem Abstand löst sich der Griff. Beide Hände einzeln, Highlight und Controller-Haptik.
+- **Einstellungen** Größe (50–150 %) und Muskelkraft (20–200 %) werden im Browser gespeichert.
 - **Platzieren**: Figur setzen, um die Hochachse drehen (Thumbstick, Trigger/Pinch halten + seitlich ziehen, Maus ziehen), verschieben (Thumbstick vor/zurück, Grip halten und ziehen). Position wird per XR-Anchor gehalten, wenn verfügbar.
 - **Interaktion**: aktiver Ragdoll mit PD-artigen Gelenkmotoren, die der Idle-Animation folgen, Balance-Regelung, Ausfallschritten und Aufstehen. Stöße per Controller-Ray, Hand/Finger (Hand-Tracking) oder Mausklick. Raumflächen (Boden, Wände, Möbel aus Plane/Mesh-Detection) sind Kollisionskörper.
 - **Eigene Modelle**: Upload von GLB, glTF (eingebettet) und VRM über die Web-Oberfläche (Desktop-tauglich), Auswahl, Umbenennen und Löschen. Das Standardmodell bleibt immer verfügbar.
-- **Automatisches Skelett-Mapping** auf humanoide Knochennamen (Mixamo, VRM, Blender-/Unreal-/Unity-Namensschemata). VRM-Modelle nutzen das VRM-Humanoid und **Spring Bones** (Haare, Kleidung).
+- **Automatisches Skelett-Mapping** auf humanoide Knochennamen (Mixamo, VRM, Rigify, Unreal-Mannequin `pelvis`/`spine_01`/`upperarm_l`/…, 3ds-Max-Biped `Bip001-L-Thigh` mit beliebiger Bip-Nummer und Trennzeichen Leerzeichen/`-`/`_`). Die Zuordnung folgt der Hierarchie (Beine unter dem Becken, Arme unter Wirbelsäule/Schlüsselbein). Hilfsknochen (Twist, IK, Socket, Weapon, Prop, End/Nub, Footsteps, `root_foot`/`root_hand`) werden ignoriert statt falsch zugeordnet. Übrige Knochen (Haare, Rock, Accessoires) bleiben am Elternknochen und laufen steif mit – **keine** Extra-Physik für Brust- oder Körperzonen. Fehlt ein Pflichtknochen, listet die Upload-UI ihn. VRM-Modelle nutzen das VRM-Humanoid und **Spring Bones** (Haare, Kleidung).
 
 ## Bedienung
 
@@ -29,16 +32,22 @@ WebXR braucht HTTPS (oder localhost). Die öffentliche Basis-URL gehört nur in 
 | A / X | Modus wechseln (Platzieren ↔ Interaktion) |
 | B / Y | Figur wieder aufstellen |
 | Interaktion: Trigger auf Figur | Stoß; Grip + Trigger = starker Stoß |
+| Thumbstick drücken | VR-Menü öffnen/schließen (die Quest-Menütaste ist in WebXR meist nicht verfügbar) |
+| Trigger auf Menü | Button drücken bzw. Slider ziehen |
+| Grip nahe ihrer Hand | Hand greifen und führen (wechselt automatisch in Interaktion) |
 
 ### Meta Quest – Hand-Tracking
 
 - Pinch kurz: setzen · Pinch halten + Hand seitlich bewegen: drehen.
-- Linke Hand anheben: Menü am Handgelenk (Platzieren, Interaktion, Aufstellen, nächstes Modell) – mit dem rechten Zeigefinger antippen oder per Pinch-Ray wählen.
+- Linke Handfläche zum Gesicht drehen: Menü-Knopf über der Handfläche erscheint – mit dem rechten Zeigefinger antippen. Das Panel wird per Finger-Tippen oder Pinch-Ray bedient.
+- Pinch oder Faust nahe ihrer Hand: Hand greifen; öffnen = loslassen.
 - Interaktion: Figur mit Hand und Fingern direkt anschubsen.
 
 ### Desktop
 
-Klick: setzen · Ziehen: drehen · `Q`/`E`: drehen · Leertaste: Modus · `R`: aufstellen · `N`: nächstes Modell · rechte Maustaste: Kamera · Mausrad: Zoom · im Interaktionsmodus Klick auf die Figur = Stoß, Shift + Klick = starker Stoß.
+Klick: setzen · Ziehen: drehen · `Q`/`E`: drehen · Leertaste: Modus · `R`: aufstellen · `N`: nächstes Modell · `P`: neu platzieren · `M`: 3D-Menü (wie in der Brille, per Maus bedienbar) · rechte Maustaste: Kamera · Mausrad: Zoom · im Interaktionsmodus Klick auf die Figur = Stoß, Shift + Klick = starker Stoß.
+
+Hand greifen: Maus über ihre Hand (Highlight), gedrückt halten und ziehen; das Mausrad schiebt die gegriffene Hand dabei nach vorn/hinten.
 
 Für eine XR-Session am PC eignet sich der Immersive-Web-Emulator für Chromium (`immersive-ar`).
 
@@ -129,7 +138,10 @@ Tests:
 pytest -q                       # Backend inkl. Upload-API, Auth, Limits
 npm ci && npm test              # Physik/Skelett-Mapping (Node, headless)
 node frontend/js/smoke.node.mjs # Frontend-Smoke-Test
+npm run test:e2e                # Browser-E2E (Desktop + emulierte Quest 3 via IWER)
 ```
+
+`test:e2e` braucht eine laufende App (`NOVA_URL`, Standard `http://localhost:8080`) und ein lokales Chrome (`CHROME_PATH`, Standard `/usr/bin/google-chrome`); optional legt `SHOTS=<ordner>` Screenshots ab. Die E2E-Tests laufen nicht in der CI. Mit `?debug` in der URL stellt die App ein Debug-Objekt `window.nova` bereit, das die E2E-Tests nutzen.
 
 Die Node-Abhängigkeiten in `package.json` sind nur für die Tests; die App lädt dieselben Versionen zur Laufzeit per CDN.
 
@@ -144,13 +156,20 @@ Die mitgelieferte `frontend/assets/models/character.glb` ist byte-identisch mit 
 - Balance: Aufrichte- und Schwerpunktregelung, Standfüße, Ausfallschritte nach dem Capture-Point-Prinzip (bis zu 5 Schritte in Folge).
 - Sturz: bei starker Neigung, zu niedriger Hüfte oder hoher Geschwindigkeit werden die Muskeln schlaff; nach kurzer Pause steht die Figur wieder auf. Gelingt das nicht, wird sie automatisch zurückgesetzt. B/Y bzw. `R` stellt sie jederzeit auf.
 - Fester Zeitschritt 1/120 s.
+- Hand greifen: ein kraftbegrenzter Punkt-Antrieb (Geschwindigkeits-Constraint mit Vorsteuerung) zieht den Handpunkt des Unterarms zum Ziel; eine Zwei-Knochen-IK setzt dazu die Muskelziele von Schulter und Ellbogen, der Arm ist dabei weicher. Schultergelenk bis 145° mit eigener Swing-Twist-Begrenzung; das Schlüsselbein wird beim Heben rein optisch mitgedreht.
+- Griff löst sich bei Abstand über ca. 65 cm, bei länger anhaltender Überdehnung oder wenn sie fällt. Zieht man über die Armlänge hinaus, verschiebt sich der Schrittpunkt – sie geht hinterher. Nach dem Loslassen werden Muskelkraft und Gelenkgeschwindigkeit über 0,9 s hochgefahren (sanfte Rückkehr in die Idle-Pose).
+- Muskelkraft skaliert die Gelenkmotoren und (nur nach oben) die Balance-Hilfen; sehr niedrige Werte lassen sie zusammensacken.
 
 ## Grenzen
 
-- Nicht auf echter Quest-Hardware getestet, nur im Desktop-Browser (Headless-Chrome) und in Node-Tests.
+- Nicht auf echter Quest-Hardware getestet, nur im Desktop-Browser (Headless-Chrome), im Quest-3-Emulator (IWER) und in Node-Tests. Pinch-/Faust-Schwellen und Handflächen-Geste sind auf echtem Hand-Tracking nicht abgestimmt.
+- Menü per Thumbstick-Druck statt Menütaste. Das Schlüsselbein-Heben ist kosmetisch, die sichtbare Hand kann daher einige cm vom Physik-Griffpunkt abweichen. Der Schulter-Kegel ist symmetrisch und erlaubt zu viel Rückschwung.
+- Greifen nur, während sie steht (nicht liegend/beim Aufstehen). Controller-/Hand-Kollider sind im Umkreis von 18 cm ihrer Hand deaktiviert, damit man sie nicht wegschiebt.
+- Skalieren ändert die Masse nicht; Drehen/Skalieren im Interaktionsmodus baut den Ragdoll nach 0,6 s neu auf.
 - Das Aufstehen wird durch Hilfskräfte am Becken unterstützt und ist keine natürliche Aufsteh-Animation.
 - Die Balance nutzt zusätzlich unterstützende Kräfte (Aufrichten, Schwerpunkt) – kein rein muskelgetriebenes Stehen.
-- Modelle ohne erkennbare Beine/Arme/Wirbelsäule werden angezeigt, aber ohne Physik.
+- Modelle ohne erkennbare Beine/Arme/Wirbelsäule werden angezeigt, aber ohne Physik. Die Upload-Liste nennt dann die fehlenden Pflichtknochen (Hüfte, Kopf, Beine/Füße, Wirbelsäule).
+- 3ds-Max-Biped hängt die Oberschenkel oft unter `Spine` statt unter `Pelvis`; das Mapping akzeptiert das, die Optik der Hüfte kann dadurch etwas steifer wirken.
 - Spring Bones nur bei VRM; GLB-Modelle ohne Idle-Clip bekommen eine prozedurale Idle-Pose.
 - Draco/KTX2/Meshopt-Decoder und alle Bibliotheken kommen vom CDN (jsdelivr); offline startet die App nicht.
 
@@ -159,15 +178,19 @@ Die mitgelieferte `frontend/assets/models/character.glb` ist byte-identisch mit 
 ```
 app/main.py               FastAPI: Health, Version, Modell-API, statisches Frontend
 app/models_store.py       persistente Modellablage (Datei + Metadaten-JSON)
-app/model_inspect.py      Prüfung von GLB/glTF/VRM, Humanoid-Erkennung
+app/model_inspect.py      Prüfung von GLB/glTF/VRM, Humanoid-Erkennung (Biped/UE inkl. Hilfsknochen)
+tests/fixtures/rigs/      synthetische Biped- und UE-Skelette (keine fremden Modelldateien)
 frontend/js/main.js       App-Logik, Modi, Eingabe
 frontend/js/active-ragdoll.js   Muskelphysik, Balance, Schritte, Aufstehen
 frontend/js/physics-world.js    cannon-es-Welt, Raumkollider, Hände
-frontend/js/humanoid-map.js     Skelett-Mapping
+frontend/js/humanoid-map.js     Skelett-Mapping (Mixamo, Biped, UE-Mannequin, Hilfsknochen-Filter)
 frontend/js/character.js        Laden (GLB/VRM), Idle, Platzierung
 frontend/js/xr-session.js       WebXR-Session, Hit-Test, Anchors, Raum
-frontend/js/xr-menu.js          Handgelenk-Menü
+frontend/js/xr-menu.js          schwebendes VR-Menü (Laser, Finger-Tippen, Handflächen-Knopf)
+frontend/js/menu-layout.js      Menü-Layout und Hit-Test (rein, testbar)
+frontend/js/hand-grab.js        Greifen ihrer Hände (Highlight, Haptik)
 frontend/js/models-ui.js        Modellverwaltung/Upload-UI
 tests/                    pytest (Backend, Frontend-Smoke)
-frontend/tests/           Node-Tests (Physik, Mapping)
+frontend/tests/           Node-Tests (Physik, Greifen, Menü, Mapping)
+frontend/tests/e2e/       Browser-E2E (Desktop, emulierte Quest 3)
 ```

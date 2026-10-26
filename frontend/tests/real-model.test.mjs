@@ -79,4 +79,26 @@ test("bundled character maps to a physics-ready humanoid and stands", async () =
   assert.ok(states.includes("fallen"), `states: ${states}`);
   run(9);
   upright();
+
+  // Hold her right hand and lift it above her head, then let go.
+  const ragdoll = physics.ragdoll;
+  const pelvis = ragdoll.byId.get("pelvis").body;
+  const relHand = () => pelvis.pointToLocalFrame(ragdoll.handPosition("right"));
+  const idleRel = relHand();
+  const start = ragdoll.handPosition("right").clone();
+  assert.ok(ragdoll.grab("right", start));
+  const g = ragdoll.grabs.right;
+  const shoulder = ragdoll.byId.get("torso").body.pointToWorldFrame(g.shoulderLocal);
+  const top = shoulder.vadd(new CANNON.Vec3(0, g.reach * 0.8, g.reach * 0.3));
+  for (let i = 1; i <= 108; i += 1) {
+    ragdoll.setGrabTarget("right", start.vadd(top.vsub(start).scale(Math.min(1, i / 72))), 1 / 72);
+    run(1 / 72);
+  }
+  assert.ok(ragdoll.isHeld("right"));
+  assert.ok(ragdoll.handPosition("right").distanceTo(top) < 0.15, `held hand ${ragdoll.handPosition("right").distanceTo(top)} m from target`);
+  upright();
+  ragdoll.release("right");
+  run(3);
+  assert.ok(relHand().distanceTo(idleRel) < 0.12, `released hand ${relHand().distanceTo(idleRel)} m from idle`);
+  upright();
 });

@@ -18,6 +18,8 @@ def test_required_frontend_files_exist():
         FRONTEND / "js" / "humanoid-map.js",
         FRONTEND / "js" / "xr-session.js",
         FRONTEND / "js" / "xr-menu.js",
+        FRONTEND / "js" / "menu-layout.js",
+        FRONTEND / "js" / "hand-grab.js",
         FRONTEND / "js" / "models-ui.js",
         FRONTEND / "js" / "api.js",
         FRONTEND / "assets" / "models" / "character.glb",
@@ -86,3 +88,25 @@ def test_fetch_script_skips_when_dest_exists(tmp_path):
     )
     assert "skip fetch" in result.stdout
     assert dest.read_bytes() == before
+
+
+def test_upload_ui_lists_missing_required_bones():
+    source = (FRONTEND / "js" / "models-ui.js").read_text(encoding="utf-8")
+    assert "describeMissing" in source
+    assert "es fehlen:" in source
+    mapping = (FRONTEND / "js" / "humanoid-map.js").read_text(encoding="utf-8")
+    assert "isHelperBoneName" in mapping
+    assert "Bip" in mapping
+    fixtures = ROOT / "tests" / "fixtures" / "rigs"
+    assert (fixtures / "biped.json").is_file()
+    assert (fixtures / "ue-mannequin.json").is_file()
+
+
+def test_vr_menu_and_grab_wired_up():
+    main = (FRONTEND / "js" / "main.js").read_text(encoding="utf-8")
+    html = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    assert "new XRMenu(" in main and "new HandGrab(" in main
+    for action in ("relocate", "rotate", "scale", "strength", "model", "close"):
+        assert f'case "{action}"' in main, action
+    for element_id in ("relocate", "open-menu", "scale-range", "strength-range"):
+        assert f'id="{element_id}"' in html

@@ -12,6 +12,11 @@ export const OPTIONAL_FEATURES = [
 
 const REPORTED = ["hit-test", "plane-detection", "mesh-detection", "anchors", "hand-tracking"];
 const BUTTON = { trigger: 0, squeeze: 1, thumbstick: 3, a: 4, b: 5 };
+const PINCH_ON = 0.02;
+const PINCH_OFF = 0.035;
+const FIST_ON = 0.065;
+const FIST_OFF = 0.085;
+const FIST_TIPS = ["index-finger-tip", "middle-finger-tip", "ring-finger-tip"];
 
 export function supportedFeatureList(session) {
   return REPORTED.filter((name) => session.enabledFeatures?.includes(name));
@@ -91,6 +96,10 @@ class InputSlot {
     this.pressed = new Set();
     this.released = new Set();
     this.axes = [0, 0];
+    this.grabPoint = new THREE.Vector3();
+    this.palmNormal = new THREE.Vector3();
+    this.pinching = false;
+    this.fist = false;
 
     this.controller.addEventListener("connected", (event) => this._connect(event.data, renderer));
     this.controller.addEventListener("disconnected", () => this._disconnect());
@@ -128,7 +137,26 @@ class InputSlot {
     this.hit = null;
     this.selecting = false;
     this.squeezing = false;
+    this.pinching = false;
+    this.fist = false;
     this.tip.visible = false;
+  }
+
+  /** Controller: grip held. Hand: pinch or fist (from joint distances, not events). */
+  get grabbing() {
+    return this.isHand ? this.pinching || this.fist : this.squeezing;
+  }
+
+  /** Short haptic pulse; silently ignored where the controller or browser has no actuator. */
+  pulse(intensity, ms) {
+    const gamepad = this.source?.gamepad;
+    try {
+      const actuator = gamepad?.hapticActuators?.[0];
+      if (actuator?.pulse) actuator.pulse(intensity, ms)?.catch?.(() => {});
+      else gamepad?.vibrationActuator?.playEffect?.("dual-rumble", { duration: ms, strongMagnitude: intensity, weakMagnitude: intensity })?.catch?.(() => {});
+    } catch {
+      // no haptics
+    }
   }
 
   rayOrigin(out) {
@@ -185,6 +213,38 @@ class InputSlot {
     const indexTip = this.joint("index-finger-tip");
     this.tip.visible = Boolean(indexTip);
     if (indexTip) indexTip.getWorldPosition(this.tip.position);
+    this._updateGrabPose();
+  }
+
+  _updateGrabPose() {
+    if (!this.isHand) {
+      this.pinching = this.fist = false;
+      (this.grip.visible ? this.grip : this.controller).getWorldPosition(this.grabPoint);
+      this.palmNormal.set(0, 0, 0);
+      return;
+    }
+    const pos = (name) => this.joint(name)?.getWorldPosition(new THREE.Vector3()) || null;
+    const thumb = pos("thumb-tip");
+    const index = pos("index-finger-tip");
+    const palm = pos("middle-finger-metacarpal") || pos("wrist");
+    if (!thumb || !index || !palm) return;
+    const pinch = thumb.distanceTo(index);
+    this.pinching = pinch < (this.pinching ? PINCH_OFF : PINCH_ON);
+    const tips = FIST_TIPS.map(pos).filter(Boolean);
+    const curl = tips.reduce((sum, t) => sum + t.distanceTo(palm), 0) / Math.max(1, tips.length);
+    this.fist = !this.pinching && curl < (this.fist ? FIST_OFF : FIST_ON);
+    if (this.pinching) this.grabPoint.copy(thumb).add(index).multiplyScalar(0.5);
+    else this.grabPoint.copy(palm);
+    // Palm normal from the metacarpal fan; the cross product flips between left and right hands.
+    const wrist = pos("wrist");
+    const indexBase = pos("index-finger-metacarpal");
+    const pinkyBase = pos("pinky-finger-metacarpal");
+    if (wrist && indexBase && pinkyBase) {
+      const a = indexBase.sub(wrist);
+      const b = pinkyBase.sub(wrist);
+      this.palmNormal.crossVectors(a, b).normalize();
+      if (this.handedness === "left") this.palmNormal.negate();
+    }
   }
 
   setRayLength(length, color) {

@@ -270,6 +270,10 @@ def test_non_humanoid_rig_is_reported():
         ("J_Bip_C_Hips", "hips"),
         ("DEF-thigh.L", "lthigh"),
         ("Bip01 R Calf", "rcalf"),
+        ("Bip001-L-Thigh", "lthigh"),
+        ("Bip002_R_Forearm", "rforearm"),
+        ("upperarm_l", "lupperarm"),
+        ("clavicle_r", "rclavicle"),
         ("Armature|Head", "head"),
     ],
 )

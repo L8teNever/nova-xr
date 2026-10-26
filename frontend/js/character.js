@@ -53,9 +53,10 @@ export class Character {
     this.vrm = null;
     this.mixer = null;
     this.idleAction = null;
-    this.humanoid = { bones: {}, missing: [], physicsReady: false };
+    this.humanoid = { bones: {}, missing: [], missingRequired: [], physicsReady: false };
     this.restPose = new Map();
     this.height = 1.7;
+    this.scale = 1;
     this.yaw = 0;
     this.placed = false;
     this.entry = null;
@@ -77,6 +78,17 @@ export class Character {
     return Boolean(this.model);
   }
 
+  /** Height in the scene, including the user's size setting. */
+  get worldHeight() {
+    return this.height * this.scale;
+  }
+
+  setScale(scale) {
+    this.scale = scale;
+    this.root.scale.setScalar(scale);
+    this.root.updateMatrixWorld(true);
+  }
+
   async load(entry, onProgress) {
     sharedLoader ||= createLoader(this.renderer);
     const gltf = await sharedLoader.loadAsync(entry.url, (event) => {
@@ -95,6 +107,8 @@ export class Character {
     }
     this.vrm = vrm;
     this.model = model;
+    // Facing and size are measured at scale 1; the user's size setting is applied on top.
+    this.root.scale.setScalar(1);
     model.traverse((obj) => {
       if (obj.isMesh || obj.isSkinnedMesh) {
         obj.frustumCulled = false;
@@ -115,6 +129,7 @@ export class Character {
     this._faceForward();
     this._normalizeSize();
     this._setupIdle(gltf.animations || []);
+    this.root.scale.setScalar(this.scale);
     this.update(0);
     return this;
   }
@@ -281,7 +296,7 @@ export class Character {
     if (!hips || !this.root.visible) return;
     const p = hips.getWorldPosition(new THREE.Vector3());
     const height = Math.max(0, p.y - groundY);
-    const size = this.height * 0.42 * (1 + Math.max(0, 0.5 - height / this.height));
+    const size = this.worldHeight * 0.42 * (1 + Math.max(0, 0.5 - height / this.worldHeight));
     this.shadow.position.set(p.x, groundY + 0.003, p.z);
     this.shadow.scale.set(size, 1, size);
   }
@@ -306,6 +321,6 @@ export class Character {
     this.idleAction = null;
     this.restPose.clear();
     this.blend = null;
-    this.humanoid = { bones: {}, missing: [], physicsReady: false };
+    this.humanoid = { bones: {}, missing: [], missingRequired: [], physicsReady: false };
   }
 }

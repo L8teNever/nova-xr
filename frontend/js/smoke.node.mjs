@@ -8,6 +8,8 @@ const required = [
   "js/main.js",
   "js/xr-session.js",
   "js/xr-menu.js",
+  "js/menu-layout.js",
+  "js/hand-grab.js",
   "js/physics-world.js",
   "js/active-ragdoll.js",
   "js/humanoid-map.js",

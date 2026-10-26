@@ -4,11 +4,14 @@
   "type": "module",
   "description": "Dev-only: lets Node tests import the same three.js / cannon-es versions the browser loads via importmap.",
   "scripts": {
-    "test": "node --test frontend/tests/*.test.mjs"
+    "test": "node --test frontend/tests/*.test.mjs",
+    "test:e2e": "node frontend/tests/e2e/desktop.mjs && node frontend/tests/e2e/xr-emulated.mjs"
   },
   "devDependencies": {
     "@pixiv/three-vrm": "3.4.5",
     "cannon-es": "0.20.0",
+    "iwer": "2.7.0",
+    "puppeteer-core": "23.11.1",
     "three": "0.180.0"
   }
 }
