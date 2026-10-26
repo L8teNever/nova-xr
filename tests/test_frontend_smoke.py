@@ -90,6 +90,18 @@ def test_fetch_script_skips_when_dest_exists(tmp_path):
     assert dest.read_bytes() == before
 
 
+def test_upload_ui_lists_missing_required_bones():
+    source = (FRONTEND / "js" / "models-ui.js").read_text(encoding="utf-8")
+    assert "describeMissing" in source
+    assert "es fehlen:" in source
+    mapping = (FRONTEND / "js" / "humanoid-map.js").read_text(encoding="utf-8")
+    assert "isHelperBoneName" in mapping
+    assert "Bip" in mapping
+    fixtures = ROOT / "tests" / "fixtures" / "rigs"
+    assert (fixtures / "biped.json").is_file()
+    assert (fixtures / "ue-mannequin.json").is_file()
+
+
 def test_vr_menu_and_grab_wired_up():
     main = (FRONTEND / "js" / "main.js").read_text(encoding="utf-8")
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")

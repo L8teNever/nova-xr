@@ -1,4 +1,5 @@
 import { api } from "./api.js";
+import { describeMissing } from "./humanoid-map.js";
 
 const TOKEN_KEY = "nova.uploadToken";
 const ALLOWED = [".glb", ".gltf", ".vrm"];
@@ -104,7 +105,14 @@ export class ModelsUI {
         const info = m.info || {};
         const tags = [m.format?.toUpperCase(), formatSize(m.size)];
         if (m.builtin) tags.push("Standard");
-        else if (info.humanoid === false) tags.push("kein humanoides Skelett – nur Anzeige");
+        else if (info.humanoid === false) {
+          const missing = (info.missing_bones || []).filter(Boolean);
+          tags.push(
+            missing.length
+              ? `kein humanoides Skelett (es fehlen: ${describeMissing(missing)}) – nur Anzeige`
+              : "kein humanoides Skelett – nur Anzeige",
+          );
+        }
         else if (info.vrm_version) tags.push(`VRM ${info.vrm_version}`);
         const actions = [
           el("button", { type: "button", textContent: m.id === this.activeId ? "Aktiv" : "Verwenden", disabled: m.id === this.activeId, onclick: () => this.choose(m.id) }),

@@ -53,7 +53,7 @@ export class Character {
     this.vrm = null;
     this.mixer = null;
     this.idleAction = null;
-    this.humanoid = { bones: {}, missing: [], physicsReady: false };
+    this.humanoid = { bones: {}, missing: [], missingRequired: [], physicsReady: false };
     this.restPose = new Map();
     this.height = 1.7;
     this.scale = 1;
@@ -321,6 +321,6 @@ export class Character {
     this.idleAction = null;
     this.restPose.clear();
     this.blend = null;
-    this.humanoid = { bones: {}, missing: [], physicsReady: false };
+    this.humanoid = { bones: {}, missing: [], missingRequired: [], physicsReady: false };
   }
 }

@@ -3,6 +3,7 @@ import * as CANNON from "cannon-es";
 import { api } from "./api.js";
 import { Character } from "./character.js";
 import { HandGrab } from "./hand-grab.js";
+import { describeMissing } from "./humanoid-map.js";
 import { clampRange, wrapDegrees } from "./menu-layout.js";
 import { ModelsUI } from "./models-ui.js";
 import { PhysicsWorld } from "./physics-world.js";
@@ -193,8 +194,8 @@ function setMode(next, { keepResume = false, quiet = false } = {}) {
     if (!character.ready) return setStatus("Modell lädt noch …");
     if (!character.placed || !character.root.visible) return setStatus("Erst platzieren: auf den Boden zielen und Trigger/Pinch.");
     if (!character.humanoid.physicsReady) {
-      const missing = character.humanoid.missing.slice(0, 4).join(", ");
-      return setStatus(`Keine Muskel-Physik: Skelett nicht als humanoid erkannt (fehlt u. a.: ${missing}).`);
+      const keys = character.humanoid.missingRequired?.length ? character.humanoid.missingRequired : character.humanoid.missing;
+      return setStatus(`Keine Muskel-Physik: Skelett nicht als humanoid erkannt (es fehlen: ${describeMissing(keys)}).`);
     }
     enterPhysics();
     mode = "interact";
@@ -382,10 +383,11 @@ async function loadModel(entry) {
     const h = character.humanoid;
     const extras = [`Idle: ${character.idleSource}`];
     if (character.vrm) extras.push("VRM-Spring-Bones aktiv");
+    const missing = h.missingRequired?.length ? h.missingRequired : h.missing;
     setStatus(
       h.physicsReady
         ? `„${entry.name}“ geladen (${extras.join(", ")}).`
-        : `„${entry.name}“ geladen – kein humanoides Skelett erkannt, daher nur Anzeige ohne Physik.`,
+        : `„${entry.name}“ geladen – kein humanoides Skelett erkannt (es fehlen: ${describeMissing(missing)}), daher nur Anzeige ohne Physik.`,
     );
     if (wasInteract && h.physicsReady) setMode("interact");
   } catch (error) {

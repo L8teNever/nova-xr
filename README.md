@@ -16,7 +16,7 @@ WebXR braucht HTTPS (oder localhost). Die öffentliche Basis-URL gehört nur in 
 - **Platzieren**: Figur setzen, um die Hochachse drehen (Thumbstick, Trigger/Pinch halten + seitlich ziehen, Maus ziehen), verschieben (Thumbstick vor/zurück, Grip halten und ziehen). Position wird per XR-Anchor gehalten, wenn verfügbar.
 - **Interaktion**: aktiver Ragdoll mit PD-artigen Gelenkmotoren, die der Idle-Animation folgen, Balance-Regelung, Ausfallschritten und Aufstehen. Stöße per Controller-Ray, Hand/Finger (Hand-Tracking) oder Mausklick. Raumflächen (Boden, Wände, Möbel aus Plane/Mesh-Detection) sind Kollisionskörper.
 - **Eigene Modelle**: Upload von GLB, glTF (eingebettet) und VRM über die Web-Oberfläche (Desktop-tauglich), Auswahl, Umbenennen und Löschen. Das Standardmodell bleibt immer verfügbar.
-- **Automatisches Skelett-Mapping** auf humanoide Knochennamen (Mixamo, VRM, Blender-/Unreal-/Unity-Namensschemata). VRM-Modelle nutzen das VRM-Humanoid und **Spring Bones** (Haare, Kleidung).
+- **Automatisches Skelett-Mapping** auf humanoide Knochennamen (Mixamo, VRM, Rigify, Unreal-Mannequin `pelvis`/`spine_01`/`upperarm_l`/…, 3ds-Max-Biped `Bip001-L-Thigh` mit beliebiger Bip-Nummer und Trennzeichen Leerzeichen/`-`/`_`). Die Zuordnung folgt der Hierarchie (Beine unter dem Becken, Arme unter Wirbelsäule/Schlüsselbein). Hilfsknochen (Twist, IK, Socket, Weapon, Prop, End/Nub, Footsteps, `root_foot`/`root_hand`) werden ignoriert statt falsch zugeordnet. Übrige Knochen (Haare, Rock, Accessoires) bleiben am Elternknochen und laufen steif mit – **keine** Extra-Physik für Brust- oder Körperzonen. Fehlt ein Pflichtknochen, listet die Upload-UI ihn. VRM-Modelle nutzen das VRM-Humanoid und **Spring Bones** (Haare, Kleidung).
 
 ## Bedienung
 
@@ -168,7 +168,8 @@ Die mitgelieferte `frontend/assets/models/character.glb` ist byte-identisch mit 
 - Skalieren ändert die Masse nicht; Drehen/Skalieren im Interaktionsmodus baut den Ragdoll nach 0,6 s neu auf.
 - Das Aufstehen wird durch Hilfskräfte am Becken unterstützt und ist keine natürliche Aufsteh-Animation.
 - Die Balance nutzt zusätzlich unterstützende Kräfte (Aufrichten, Schwerpunkt) – kein rein muskelgetriebenes Stehen.
-- Modelle ohne erkennbare Beine/Arme/Wirbelsäule werden angezeigt, aber ohne Physik.
+- Modelle ohne erkennbare Beine/Arme/Wirbelsäule werden angezeigt, aber ohne Physik. Die Upload-Liste nennt dann die fehlenden Pflichtknochen (Hüfte, Kopf, Beine/Füße, Wirbelsäule).
+- 3ds-Max-Biped hängt die Oberschenkel oft unter `Spine` statt unter `Pelvis`; das Mapping akzeptiert das, die Optik der Hüfte kann dadurch etwas steifer wirken.
 - Spring Bones nur bei VRM; GLB-Modelle ohne Idle-Clip bekommen eine prozedurale Idle-Pose.
 - Draco/KTX2/Meshopt-Decoder und alle Bibliotheken kommen vom CDN (jsdelivr); offline startet die App nicht.
 
@@ -177,11 +178,12 @@ Die mitgelieferte `frontend/assets/models/character.glb` ist byte-identisch mit 
 ```
 app/main.py               FastAPI: Health, Version, Modell-API, statisches Frontend
 app/models_store.py       persistente Modellablage (Datei + Metadaten-JSON)
-app/model_inspect.py      Prüfung von GLB/glTF/VRM, Humanoid-Erkennung
+app/model_inspect.py      Prüfung von GLB/glTF/VRM, Humanoid-Erkennung (Biped/UE inkl. Hilfsknochen)
+tests/fixtures/rigs/      synthetische Biped- und UE-Skelette (keine fremden Modelldateien)
 frontend/js/main.js       App-Logik, Modi, Eingabe
 frontend/js/active-ragdoll.js   Muskelphysik, Balance, Schritte, Aufstehen
 frontend/js/physics-world.js    cannon-es-Welt, Raumkollider, Hände
-frontend/js/humanoid-map.js     Skelett-Mapping
+frontend/js/humanoid-map.js     Skelett-Mapping (Mixamo, Biped, UE-Mannequin, Hilfsknochen-Filter)
 frontend/js/character.js        Laden (GLB/VRM), Idle, Platzierung
 frontend/js/xr-session.js       WebXR-Session, Hit-Test, Anchors, Raum
 frontend/js/xr-menu.js          schwebendes VR-Menü (Laser, Finger-Tippen, Handflächen-Knopf)
