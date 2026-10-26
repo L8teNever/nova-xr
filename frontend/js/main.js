@@ -58,6 +58,7 @@ const SETTINGS_KEY = "nova.settings";
 const DEG = Math.PI / 180;
 const RESUME_DELAY = 0.6;
 const MOUSE_GRAB_RADIUS = 0.12;
+const GRAB_REACH = 0.18;
 const PALM_SHOW = 0.7;
 const PALM_HIDE = 0.45;
 const SIDE_LABEL = { left: "Linke", right: "Rechte" };
@@ -110,6 +111,7 @@ grab.onGrab = (id, side) => setStatus(`${SIDE_LABEL[side]} Hand gegriffen – f�
 grab.onRelease = (id, side, reason) => {
   if (reason === "stretch") setStatus("Griff gelöst – zu weit gezogen.");
   else if (reason === "fallen") setStatus("Griff gelöst – sie ist gestürzt.");
+  else setStatus(`${SIDE_LABEL[side]} Hand losgelassen – der Arm geht zurück in die Ruhehaltung.`);
 };
 
 function loadSettings() {
@@ -575,8 +577,11 @@ function xrGrabbers() {
 }
 
 function updateColliders(dt) {
+  const hands = figureHands();
   input.slots.forEach((slot) => {
-    const active = mode === "interact" && slot.connected && !grab.isGrabbing(`xr${slot.index}`);
+    // No contact while holding, or while reaching for a hand: the collider would push it out of grab range.
+    const reaching = slot.connected && grab.nearest(hands, slot.grabPoint, GRAB_REACH);
+    const active = mode === "interact" && slot.connected && !grab.isGrabbing(`xr${slot.index}`) && !reaching;
     if (slot.isHand) {
       for (const [name, radius] of HAND_COLLIDERS) {
         const id = `${slot.index}:${name}`;
@@ -689,7 +694,11 @@ renderer.domElement.addEventListener("pointerup", (event) => {
   const ray = pointerRay(event);
   if (mode === "place") {
     const hit = ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -groundY), new THREE.Vector3());
-    if (hit) placeAt(hit, character.placed && !relocating ? character.yaw : yawFacingCamera(hit));
+    if (hit) {
+      const wasRelocating = relocating;
+      placeAt(hit, character.placed && !relocating ? character.yaw : yawFacingCamera(hit));
+      if (wasRelocating) setStatus("Neu platziert. Ziehen = drehen, M = Menü, Leertaste = Interaktion.");
+    }
   } else {
     const hit = physics.raycastBody(ray.origin, ray.origin.clone().addScaledVector(ray.direction, 20));
     if (hit) {
@@ -852,6 +861,10 @@ isArSupported().then((ok) => {
 api.version().then((info) => {
   ui.version.textContent = `v${info.version} · ${String(info.git_commit).slice(0, 7)}`;
 }).catch(() => {});
+
+if (new URLSearchParams(location.search).has("debug")) {
+  window.nova = { character, physics, grab, menu, camera, settings, input, figureHands, get mode() { return mode; }, get relocating() { return relocating; } };
+}
 
 updateModeUi();
 syncHud();
