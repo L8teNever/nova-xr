@@ -34,7 +34,19 @@
           <button type="button" data-mode="place" aria-pressed="true" class="active">Platzieren</button>
           <button type="button" data-mode="interact" aria-pressed="false">Interaktion</button>
         </div>
-        <button id="reset" type="button" disabled>Figur aufstellen</button>
+        <div class="row">
+          <button id="reset" type="button" disabled>Figur aufstellen</button>
+          <button id="relocate" type="button" disabled>Neu platzieren</button>
+        </div>
+        <label class="field range">
+          <span>Größe <output id="scale-value">100 %</output></span>
+          <input id="scale-range" type="range" min="50" max="150" step="5" value="100" />
+        </label>
+        <label class="field range">
+          <span>Muskelkraft <output id="strength-value">100 %</output></span>
+          <input id="strength-range" type="range" min="20" max="200" step="10" value="100" />
+        </label>
+        <button id="open-menu" type="button" class="ghost">3D-Menü (wie in der Brille) · M</button>
 
         <label class="field">
           <span>Modell</span>
@@ -71,20 +83,24 @@
             <li><b>Trigger</b> kurz: Figur dorthin setzen · halten + seitlich ziehen: drehen</li>
             <li><b>Thumbstick</b> links/rechts: drehen · vor/zurück: verschieben</li>
             <li><b>Grip</b> halten: Figur am Boden mitziehen</li>
+            <li><b>Thumbstick drücken</b>: Menü öffnen/schließen (Laser + Trigger bedienen, Slider ziehen)</li>
             <li><b>A/X</b>: Modus wechseln · <b>B/Y</b>: Figur aufstellen</li>
             <li>Interaktion: Trigger auf die Figur = Stoß, Grip + Trigger = starker Stoß</li>
+            <li><b>Grip</b> an ihrer Hand (ca. 10 cm): Hand greifen und führen – loslassen gibt sie frei</li>
           </ul>
           <h3>Quest – Hand-Tracking</h3>
           <ul class="help">
             <li><b>Pinch</b> kurz: setzen · Pinch halten + Hand seitlich bewegen: drehen</li>
-            <li>Linke Hand anheben: Menü am Handgelenk – mit dem rechten Zeigefinger antippen oder per Pinch wählen</li>
-            <li>Interaktion: Figur mit Hand/Fingern anschubsen</li>
+            <li>Linke Handfläche zu dir drehen: Menü-Knopf erscheint – mit dem rechten Zeigefinger antippen oder per Pinch-Strahl wählen</li>
+            <li>Menü: antippen oder Pinch-Strahl; Slider mit dem Finger oder gehaltenem Pinch ziehen</li>
+            <li>Interaktion: Figur mit Hand/Fingern anschubsen · Pinch oder Faust an ihrer Hand: Hand halten und führen</li>
           </ul>
           <h3>Desktop</h3>
           <ul class="help">
-            <li>Klick: setzen · Ziehen: drehen · Q/E: drehen · Leertaste: Modus · R: aufstellen · N: nächstes Modell</li>
+            <li>Klick: setzen · Ziehen: drehen · Q/E: drehen · Leertaste: Modus · R: aufstellen · P: neu platzieren · N: nächstes Modell · M: 3D-Menü</li>
             <li>Rechte Maustaste: Kamera drehen · Mausrad: Zoom</li>
             <li>Interaktion: Klick auf die Figur = Stoß, Shift + Klick = starker Stoß</li>
+            <li>Maus an ihrer Hand gedrückt halten und ziehen: Hand führen · Mausrad dabei: näher/weiter</li>
           </ul>
         </details>
 
