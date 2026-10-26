@@ -28,13 +28,23 @@ export const DEFAULT_PARAMS = {
   fallenTone: 0.16,
   settleTime: 1.2,
   getUpTime: 2.2,
+  grabForce: 150,
+  grabResponse: 0.1,
+  grabMaxSpeed: 4,
+  grabArmTone: 0.45,
+  grabIkBlendTime: 0.25,
+  grabStretch: 0.3,
+  grabStretchTime: 0.5,
+  grabBreak: 0.65,
+  grabRecoverTime: 0.9,
+  shoulderLift: 18 * DEG,
 };
 
 // strength in N·m for a 62 kg / 1.7 m figure; scaled to the actual model.
 const JOINTS = {
   spine: { strength: 280, swing: 40 * DEG, twist: 35 * DEG },
   neck: { strength: 50, swing: 50 * DEG, twist: 70 * DEG },
-  shoulder: { strength: 60, swing: 95 * DEG, twist: 70 * DEG },
+  shoulder: { strength: 60, swing: 145 * DEG, twist: 70 * DEG, swingTwistLimit: true },
   elbow: { strength: 45, hinge: [0, 145 * DEG] },
   hip: { strength: 300, swing: 80 * DEG, twist: 35 * DEG },
   knee: { strength: 260, hinge: [0, 150 * DEG] },
@@ -55,6 +65,27 @@ class LinearMotorEquation extends CANNON.Equation {
     const GB = this.jacobianElementB;
     GA.spatial.copy(this.axis);
     GA.rotational.set(0, 0, 0);
+    this.axis.negate(GB.spatial);
+    GB.rotational.set(0, 0, 0);
+    const GW = this.computeGW() - this.targetVelocity;
+    return -GW * this.b - h * this.computeGiMf();
+  }
+}
+
+/** Velocity drive of one body point (offset ri, world frame) along a world axis, relative to a static anchor. */
+class PointMotorEquation extends CANNON.Equation {
+  constructor(body, anchor) {
+    super(body, anchor, -1, 1);
+    this.axis = new CANNON.Vec3();
+    this.ri = new CANNON.Vec3();
+    this.targetVelocity = 0;
+  }
+
+  computeB(h) {
+    const GA = this.jacobianElementA;
+    const GB = this.jacobianElementB;
+    GA.spatial.copy(this.axis);
+    this.ri.cross(this.axis, GA.rotational);
     this.axis.negate(GB.spatial);
     GB.rotational.set(0, 0, 0);
     const GW = this.computeGW() - this.targetVelocity;
@@ -126,6 +157,9 @@ export class ActiveRagdoll {
     this.state = "off";
     this.tone = 1;
     this.onStateChange = null;
+    this.onGrabRelease = null;
+    this.strength = 1;
+    this.grabs = {};
     this._time = 0;
   }
 
@@ -146,6 +180,8 @@ export class ActiveRagdoll {
     this.constraints = [];
     this.segments = [];
     this.joints = [];
+    this.grabs = {};
+    this._ordered = null;
     this.byId.clear();
     this.state = "off";
   }
@@ -199,8 +235,10 @@ export class ActiveRagdoll {
         const lowerEnd = handPos
           ? handPos.clone().addScaledVector(handPos.clone().sub(pos(S("LowerArm"))).normalize(), 0.07 * H)
           : pos(S("LowerArm")).addScaledVector(pos(S("LowerArm")).sub(pos(S("UpperArm"))).normalize(), 0.22 * H);
+        const forearmDir = lowerEnd.clone().sub(pos(S("LowerArm"))).normalize();
+        const handPoint = handPos ? handPos.clone().addScaledVector(forearmDir, 0.035 * H) : lowerEnd.clone().addScaledVector(forearmDir, -0.04 * H);
         add({ id: `${side}LowerArm`, bone: S("LowerArm"), kind: "lowerArm", parent: `${side}UpperArm`, pivot: pos(S("LowerArm")), joint: "elbow",
-          from: pos(S("LowerArm")), to: lowerEnd, w: 0.042 * H, d: 0.042 * H });
+          from: pos(S("LowerArm")), to: lowerEnd, w: 0.042 * H, d: 0.042 * H, handPoint });
       }
       add({ id: `${side}UpperLeg`, bone: S("UpperLeg"), kind: "upperLeg", parent: "pelvis", pivot: pos(S("UpperLeg")), joint: "hip",
         from: pos(S("UpperLeg")), to: pos(S("LowerLeg")), w: 0.08 * H, d: 0.08 * H });
@@ -222,10 +260,14 @@ export class ActiveRagdoll {
     const lowest = Math.min(...feet.map((f) => f.body.position.y - f.halfExtents.y));
     const dy = groundY + 0.002 - lowest;
     for (const s of this.segments) s.body.position.y += dy;
-    for (const spec of specs) if (spec.pivot) spec.pivot.y += dy;
+    for (const spec of specs) {
+      if (spec.pivot) spec.pivot.y += dy;
+      if (spec.handPoint) spec.handPoint.y += dy;
+    }
 
     for (const spec of specs) if (spec.parent) this._createJoint(spec, scale);
     this._createBalance();
+    this._createGrabs();
 
     const pelvis = this.byId.get("pelvis");
     this.standPelvisHeight = pelvis.body.position.y - groundY;
@@ -233,6 +275,7 @@ export class ActiveRagdoll {
     const torso = this.byId.get("torso");
     this.torsoUpLocal = torso.body.quaternion.inverse().vmult(toCannonV(torsoDir));
     this.halfStance = Math.max(0.05 * H, hipWidth * 0.5);
+    this.torsoLateralLocal = torso.body.quaternion.inverse().vmult(toCannonV(lateral));
     this.footLength = feet[0].halfExtents.z * 2;
     this.footWidth = feet[0].halfExtents.x * 2;
 
@@ -341,13 +384,23 @@ export class ActiveRagdoll {
       this._addConstraint(constraint);
       this._addConstraint(new EquationGroup(A, B, [motor, limitEq]));
     } else {
+      // cannon's twist limit measures the angle between perpendicular axes, which also grows with large swings
+      // and then blocks the arm; joints that swing far use a swing-twist decomposition limit instead.
       const constraint = new CANNON.ConeTwistConstraint(A, B, {
         pivotA, pivotB, axisA: A.vectorToLocalFrame(childDirW), axisB: B.vectorToLocalFrame(childDirW),
-        angle: def.swing, twistAngle: def.twist, collideConnected: false,
+        angle: def.swing, twistAngle: def.swingTwistLimit ? Math.PI : def.twist, collideConnected: false,
       });
       joint.motors = AXES.map(() => new CANNON.RotationalMotorEquation(A, B, 1));
+      const extra = [];
+      if (def.swingTwistLimit) {
+        joint.restRel = A.quaternion.conjugate().mult(B.quaternion);
+        joint.twistAxisB = B.vectorToLocalFrame(childDirW).unit();
+        joint.limitEq = new CANNON.RotationalMotorEquation(A, B, 1e6);
+        joint.limitEq.enabled = false;
+        extra.push(joint.limitEq);
+      }
       this._addConstraint(constraint);
-      this._addConstraint(new EquationGroup(A, B, joint.motors));
+      this._addConstraint(new EquationGroup(A, B, [...joint.motors, ...extra]));
     }
     this.joints.push(joint);
   }
@@ -371,6 +424,97 @@ export class ActiveRagdoll {
       this.footEqs[side] = eqs;
       this._addConstraint(new EquationGroup(foot, this.anchor, eqs));
     }
+  }
+
+  _createGrabs() {
+    this.grabs = {};
+    const torso = this.byId.get("torso").body;
+    for (const side of ["left", "right"]) {
+      const lower = this.byId.get(`${side}LowerArm`);
+      const upper = this.byId.get(`${side}UpperArm`);
+      if (!lower || !upper || !lower.handPoint) continue;
+      const hand = toCannonV(lower.handPoint);
+      const shoulder = toCannonV(upper.pivot);
+      const elbow = toCannonV(lower.pivot);
+      const eqs = AXES.map((axis) => {
+        const eq = new PointMotorEquation(lower.body, this.anchor);
+        eq.axis.copy(axis);
+        eq.enabled = false;
+        return eq;
+      });
+      this._addConstraint(new EquationGroup(lower.body, this.anchor, eqs));
+      this.grabs[side] = {
+        side,
+        seg: lower,
+        upper,
+        upperLen: shoulder.distanceTo(elbow),
+        lowerLen: elbow.distanceTo(hand),
+        ikBlend: 0,
+        eqs,
+        handLocal: lower.body.pointToLocalFrame(hand),
+        shoulderLocal: torso.pointToLocalFrame(shoulder),
+        reach: shoulder.distanceTo(elbow) + elbow.distanceTo(hand),
+        held: false,
+        target: new CANNON.Vec3(),
+        targetVel: new CANNON.Vec3(),
+        stretch: 0,
+        recover: 0,
+      };
+    }
+  }
+
+  /** World position of the figure's palm (the grab point), or null if the arm is not simulated. */
+  handPosition(side, out = new CANNON.Vec3()) {
+    const g = this.grabs[side];
+    if (!g) return null;
+    return g.seg.body.pointToWorldFrame(g.handLocal, out);
+  }
+
+  isHeld(side) {
+    return Boolean(this.grabs[side]?.held);
+  }
+
+  /** Start holding the figure's hand; it is pulled towards `point` by a bounded spring, never teleported. */
+  grab(side, point) {
+    const g = this.grabs[side];
+    if (!g || this.state !== "standing") return false;
+    g.held = true;
+    g.target.set(point.x, point.y, point.z);
+    g.targetVel.setZero();
+    g.stretch = 0;
+    g.recover = 0;
+    g.ikBlend = 0;
+    return true;
+  }
+
+  setGrabTarget(side, point, dt = 0) {
+    const g = this.grabs[side];
+    if (!g?.held) return;
+    if (dt > 0) {
+      g.targetVel.set((point.x - g.target.x) / dt, (point.y - g.target.y) / dt, (point.z - g.target.z) / dt);
+      const speed = g.targetVel.length();
+      if (speed > this.params.grabMaxSpeed) g.targetVel.scale(this.params.grabMaxSpeed / speed, g.targetVel);
+    }
+    g.target.set(point.x, point.y, point.z);
+  }
+
+  release(side, reason = "user") {
+    const g = this.grabs[side];
+    if (!g?.held) return;
+    g.held = false;
+    g.recover = this.params.grabRecoverTime;
+    g.upper.ikTarget = null;
+    g.seg.ikTarget = null;
+    disable(g.eqs);
+    this.onGrabRelease?.(side, reason);
+  }
+
+  releaseAll(reason = "user") {
+    for (const side of Object.keys(this.grabs)) this.release(side, reason);
+  }
+
+  get anyHeld() {
+    return Object.values(this.grabs).some((g) => g.held);
   }
 
   _addConstraint(c) {
@@ -402,6 +546,7 @@ export class ActiveRagdoll {
       const parent = bone.parent;
       parent.updateWorldMatrix(true, false);
       parent.matrixWorld.decompose(pp, pq, ps);
+      if (seg.kind === "upperArm" && this._liftShoulder(seg)) parent.matrixWorld.decompose(pp, pq, ps);
       q.set(body.quaternion.x, body.quaternion.y, body.quaternion.z, body.quaternion.w);
       bone.quaternion.copy(pq.invert().multiply(q));
       if (seg.kind === "pelvis") {
@@ -411,6 +556,29 @@ export class ActiveRagdoll {
       }
       bone.updateMatrixWorld(true);
     }
+  }
+
+  /** Raise the clavicle with the arm once the upper arm lifts past ~20° below horizontal (cosmetic, mesh only). */
+  _liftShoulder(seg) {
+    const side = seg.id.startsWith("left") ? "left" : "right";
+    const clavicle = this.humanoid[`${side}Shoulder`];
+    if (!clavicle || seg.bone.parent !== clavicle) return false;
+    const dir = seg.body.quaternion.vmult(seg.axisLocal, tv1);
+    const elevation = Math.asin(Math.max(-1, Math.min(1, dir.y)));
+    const k = Math.min(1, Math.max(0, (elevation + 0.35) / (Math.PI / 2 + 0.35)));
+    const angle = this.params.shoulderLift * smoothstep(k);
+    if (angle < 0.005) return false;
+    const torso = this.byId.get("torso").body;
+    const outward = torso.quaternion.vmult(this.torsoLateralLocal, tv2);
+    if (side === "right") outward.negate(outward);
+    const axis = new THREE.Vector3(outward.x, outward.y, outward.z).cross(new THREE.Vector3(0, 1, 0));
+    if (axis.lengthSq() < 1e-6) return false;
+    const lift = new THREE.Quaternion().setFromAxisAngle(axis.normalize(), angle);
+    const clavWorld = clavicle.getWorldQuaternion(new THREE.Quaternion());
+    const parentWorld = clavicle.parent.getWorldQuaternion(new THREE.Quaternion());
+    clavicle.quaternion.copy(parentWorld.invert().multiply(lift.multiply(clavWorld)));
+    clavicle.updateMatrixWorld(true);
+    return true;
   }
 
   /** Mass-weighted centre and velocity. */
@@ -470,9 +638,13 @@ export class ActiveRagdoll {
     const tilt = this.torsoTilt();
     const pelvisH = this.pelvisHeight();
 
+    if (this.anyHeld) this.stepsInRow = Math.min(this.stepsInRow, P.maxStepsInRow - 1);
     if (this.state === "standing") {
       const down = tilt > P.fallTilt || pelvisH < 0.6 * this.standPelvisHeight || hSpeed > P.fallSpeed || this.stepsInRow > P.maxStepsInRow;
-      if (down) this.setState("fallen");
+      if (down) {
+        this.setState("fallen");
+        this.releaseAll("fallen");
+      }
     } else if (this.state === "fallen") {
       this._settle = hSpeed < 0.3 ? this._settle + h : 0;
       if (this._settle > P.settleTime || this._stateTime > 5) {
@@ -497,7 +669,9 @@ export class ActiveRagdoll {
     if (standing) this._updateStepping(h, com, vel, feet);
     else if (this.step) this._endStep();
 
+    this._solveArmIk(h);
     for (const joint of this.joints) this._driveJoint(joint, h);
+    this._driveGrabs(h);
     const reflex = this.step || this.stepsInRow > 0 ? 2.5 : 1;
     this._driveUpright(h, standing ? reflex : gettingUp ? 1 + 3 * u : 0);
     this._driveCom(h, com, vel, feet, standing, gettingUp, u, totalMass);
@@ -537,7 +711,8 @@ export class ActiveRagdoll {
 
     const comH = Math.max(0.3, com.y - this.groundY);
     const omega = Math.sqrt(9.81 / comH);
-    const cp = tv2.set(com.x + vel.x / omega, 0, com.z + vel.z / omega);
+    const lead = this._grabLead(this._lead || (this._lead = new CANNON.Vec3()));
+    const cp = tv2.set(com.x + vel.x / omega + lead.x, 0, com.z + vel.z / omega + lead.z);
     const support = this._supportPoint(feet, cp.x, cp.z, new CANNON.Vec3());
     const heading = this.heading();
     const fx = Math.sin(heading);
@@ -566,9 +741,9 @@ export class ActiveRagdoll {
     const lx = fz;
     const lz = -fx;
     const target = new CANNON.Vec3(
-      com.x + (vel.x / omega) * 1.15 + lx * sideSign * this.halfStance,
+      com.x + (vel.x / omega) * 1.15 + lead.x + lx * sideSign * this.halfStance,
       foot.position.y,
-      com.z + (vel.z / omega) * 1.15 + lz * sideSign * this.halfStance,
+      com.z + (vel.z / omega) * 1.15 + lead.z + lz * sideSign * this.halfStance,
     );
     const otherFoot = feet[side === "left" ? "right" : "left"].body;
     const reach = target.vsub(otherFoot.position);
@@ -584,6 +759,103 @@ export class ActiveRagdoll {
     this.stepsInRow += 1;
   }
 
+  /** Horizontal offset by which held hands are pulled beyond arm's reach: shifts the capture point so she follows. */
+  _grabLead(out) {
+    out.set(0, 0, 0);
+    const torso = this.byId.get("torso").body;
+    for (const g of Object.values(this.grabs)) {
+      if (!g.held) continue;
+      const shoulder = torso.pointToWorldFrame(g.shoulderLocal, tv3);
+      const dx = g.target.x - shoulder.x;
+      const dz = g.target.z - shoulder.z;
+      const d = Math.hypot(dx, dz);
+      const excess = d - g.reach * 0.8;
+      if (excess > 0 && d > 1e-6) {
+        out.x += (dx / d) * excess;
+        out.z += (dz / d) * excess;
+      }
+    }
+    const max = this.params.maxStepLength * (this.height / 1.7);
+    const len = Math.hypot(out.x, out.z);
+    if (len > max) out.scale(max / len, out);
+    return out;
+  }
+
+  /**
+   * Two-bone IK from the shoulder towards each held target; the result becomes the arm muscles' target pose,
+   * so the whole arm (not just the hand) follows. Elbow points outwards and slightly down/back.
+   */
+  _solveArmIk(h) {
+    const torso = this.byId.get("torso").body;
+    for (const g of Object.values(this.grabs)) {
+      if (!g.held) continue;
+      g.ikBlend = Math.min(1, g.ikBlend + h / this.params.grabIkBlendTime);
+      const S = torso.pointToWorldFrame(g.shoulderLocal, new CANNON.Vec3());
+      const toT = g.target.vsub(S);
+      let D = toT.length();
+      if (D < 1e-4) continue;
+      const u = toT.scale(1 / D);
+      const L1 = g.upperLen;
+      const L2 = g.lowerLen;
+      D = Math.min(Math.max(D, Math.abs(L1 - L2) + 1e-3), (L1 + L2) * 0.999);
+      const outward = torso.quaternion.vmult(this.torsoLateralLocal);
+      if (g.side === "right") outward.negate(outward);
+      const fwd = UP.cross(outward);
+      const pole = new CANNON.Vec3(0, -0.6, 0).vadd(fwd.scale(-0.3)).vadd(outward.scale(0.8));
+      let v = pole.vsub(u.scale(pole.dot(u)));
+      if (v.length() < 1e-3) v = fwd.scale(-1).vsub(u.scale(-fwd.dot(u)));
+      v.normalize();
+      const a = (L1 * L1 - L2 * L2 + D * D) / (2 * D);
+      const hgt = Math.sqrt(Math.max(0, L1 * L1 - a * a));
+      const E = S.vadd(u.scale(a)).vadd(v.scale(hgt));
+      const T = S.vadd(u.scale(D));
+      g.upper.ikTarget = this._aimTarget(g.upper, E.vsub(S), g.ikBlend, g.upper.ikTarget);
+      g.seg.ikTarget = this._aimTarget(g.seg, T.vsub(E), g.ikBlend, g.seg.ikTarget);
+    }
+  }
+
+  /** Animated target of `seg`, swung (minimal rotation) so its long axis points along `dir`, blended by k. */
+  _aimTarget(seg, dir, k, out) {
+    const q = out || new CANNON.Quaternion();
+    dir.normalize();
+    const cur = seg.target.vmult(seg.axisLocal);
+    const swing = new CANNON.Quaternion().setFromVectors(cur, dir);
+    swing.mult(seg.target, q);
+    if (k < 1) seg.target.slerp(q, k, q);
+    return q;
+  }
+
+  _driveGrabs(h) {
+    const P = this.params;
+    const sizeK = this.height / 1.7;
+    for (const g of Object.values(this.grabs)) {
+      if (!g.held) {
+        g.recover = Math.max(0, g.recover - h);
+        continue;
+      }
+      const body = g.seg.body;
+      const r = body.quaternion.vmult(g.handLocal, tv1);
+      const ex = g.target.x - (body.position.x + r.x);
+      const ey = g.target.y - (body.position.y + r.y);
+      const ez = g.target.z - (body.position.z + r.z);
+      const dist = Math.hypot(ex, ey, ez);
+      g.stretch = dist > P.grabStretch * sizeK ? g.stretch + h : 0;
+      if (dist > P.grabBreak * sizeK || g.stretch > P.grabStretchTime) {
+        this.release(g.side, "stretch");
+        continue;
+      }
+      const err = [ex, ey, ez];
+      const ff = [g.targetVel.x, g.targetVel.y, g.targetVel.z];
+      for (let i = 0; i < 3; i += 1) {
+        const eq = g.eqs[i];
+        eq.enabled = true;
+        eq.ri.copy(r);
+        eq.targetVelocity = clampAbs(err[i] / P.grabResponse + ff[i], P.grabMaxSpeed);
+        setBound(eq, P.grabForce * sizeK * h);
+      }
+    }
+  }
+
   _endStep() {
     if (this.step) disable(this.footEqs[this.step.side]);
     this.step = null;
@@ -593,7 +865,17 @@ export class ActiveRagdoll {
   _driveJoint(joint, h) {
     const P = this.params;
     const { A, B } = joint;
-    let tone = this.tone;
+    let tone = this.tone * this.strength;
+    let maxSpeed = P.maxJointSpeed;
+    if (joint.spec.joint === "shoulder" || joint.spec.joint === "elbow") {
+      const g = this.grabs[joint.spec.id.startsWith("left") ? "left" : "right"];
+      if (g?.held) tone *= P.grabArmTone;
+      else if (g?.recover > 0) {
+        const k = smoothstep(1 - g.recover / P.grabRecoverTime);
+        tone *= P.grabArmTone + (1 - P.grabArmTone) * k;
+        maxSpeed *= 0.12 + 0.88 * k;
+      }
+    }
     if (this.step) {
       const swingLeg = joint.spec.id.startsWith(this.step.side) && (joint.spec.joint === "hip" || joint.spec.joint === "knee");
       if (swingLeg) tone *= 0.35;
@@ -605,16 +887,18 @@ export class ActiveRagdoll {
       const parentDir = A.quaternion.vmult(joint.parent.axisLocal, tv2);
       const childDir = B.quaternion.vmult(joint.child.axisLocal, tv3).clone();
       const theta = signedAngle(parentDir, childDir, axis);
-      const targetParentDir = joint.parent.target.vmult(joint.parent.axisLocal);
-      const targetChildDir = joint.child.target.vmult(joint.child.axisLocal);
-      const targetAxis = joint.parent.target.vmult(joint.hingeAxisA);
+      const parentT = joint.parent.ikTarget || joint.parent.target;
+      const childT = joint.child.ikTarget || joint.child.target;
+      const targetParentDir = parentT.vmult(joint.parent.axisLocal);
+      const targetChildDir = childT.vmult(joint.child.axisLocal);
+      const targetAxis = parentT.vmult(joint.hingeAxisA);
       let thetaT = signedAngle(targetParentDir, targetChildDir, targetAxis);
       if (this.step && joint.spec.joint === "knee" && joint.spec.id.startsWith(this.step.side)) {
         thetaT += joint.sign * 45 * DEG * Math.sin(Math.PI * Math.min(1, this.step.t / P.stepTime));
       }
       const [lo, hi] = joint.def.hinge;
       const flexT = Math.min(hi, Math.max(lo, joint.sign * thetaT));
-      const desired = clampAbs((joint.sign * flexT - theta) / P.responseTime, P.maxJointSpeed);
+      const desired = clampAbs((joint.sign * flexT - theta) / P.responseTime, maxSpeed);
       const motor = joint.motors[0];
       motor.axisA.copy(axis);
       motor.axisB.copy(axis);
@@ -636,15 +920,19 @@ export class ActiveRagdoll {
       return;
     }
 
-    // qB_des = qA * (targetA^-1 * targetB); error = qB_des * qB^-1 (world frame)
-    joint.parent.target.conjugate(tq1);
-    tq1.mult(joint.child.target, tq2);
-    A.quaternion.mult(tq2, tq1);
-    tq1.mult(B.quaternion.conjugate(tq2), tq2);
+    // qB_des = qA * (targetA^-1 * targetB); error = qB_des * qB^-1 (world frame). IK targets are absolute.
+    if (joint.child.ikTarget) {
+      joint.child.ikTarget.mult(B.quaternion.conjugate(tq2), tq2);
+    } else {
+      joint.parent.target.conjugate(tq1);
+      tq1.mult(joint.child.target, tq2);
+      A.quaternion.mult(tq2, tq1);
+      tq1.mult(B.quaternion.conjugate(tq2), tq2);
+    }
     const rv = rotationVector(tq2, tv1);
     rv.scale(1 / P.responseTime, rv);
     const speed = rv.length();
-    if (speed > P.maxJointSpeed) rv.scale(P.maxJointSpeed / speed, rv);
+    if (speed > maxSpeed) rv.scale(maxSpeed / speed, rv);
     for (let i = 0; i < 3; i += 1) {
       const motor = joint.motors[i];
       motor.axisA.copy(AXES[i]);
@@ -652,6 +940,31 @@ export class ActiveRagdoll {
       motor.targetVelocity = -rv.dot(AXES[i]);
       setBound(motor, impulse);
     }
+    if (joint.restRel) this._limitTwist(joint, h);
+  }
+
+  _limitTwist(joint, h) {
+    const { A, B, limitEq } = joint;
+    // Deviation from the rest pose in B's frame: qB = qA * restRel * d
+    joint.restRel.conjugate(tq1);
+    A.quaternion.conjugate(tq2);
+    tq1.mult(tq2, tq1);
+    tq1.mult(B.quaternion, tq1);
+    const a = joint.twistAxisB;
+    if (tq1.w < 0) { tq1.x = -tq1.x; tq1.y = -tq1.y; tq1.z = -tq1.z; tq1.w = -tq1.w; }
+    const twist = 2 * Math.atan2(tq1.x * a.x + tq1.y * a.y + tq1.z * a.z, tq1.w);
+    const limit = joint.def.twist;
+    if (Math.abs(twist) <= limit) {
+      limitEq.enabled = false;
+      return;
+    }
+    const axis = B.quaternion.vmult(a, tv1);
+    const clamped = Math.sign(twist) * limit;
+    limitEq.enabled = true;
+    limitEq.axisA.copy(axis);
+    limitEq.axisB.copy(axis);
+    limitEq.targetVelocity = -(clamped - twist) / (4 * h);
+    setBound(limitEq, 400 * h);
   }
 
   _driveUpright(h, gain) {
@@ -674,7 +987,7 @@ export class ActiveRagdoll {
       const eq = this.uprightEqs[i];
       eq.enabled = true;
       eq.targetVelocity = rv.dot(AXES[i]);
-      setBound(eq, P.uprightStrength * (this.height / 1.7) * gain * h);
+      setBound(eq, P.uprightStrength * (this.height / 1.7) * Math.min(1, this.strength) * gain * h);
     }
   }
 
@@ -710,7 +1023,7 @@ export class ActiveRagdoll {
     for (const [i, err] of [[0, errX], [2, errZ]]) {
       eqs[i].enabled = k > 0;
       eqs[i].targetVelocity = clampAbs(err / 0.4, 0.6);
-      setBound(eqs[i], P.comAssist * totalMass * g * h);
+      setBound(eqs[i], P.comAssist * Math.min(1, this.strength) * totalMass * g * h);
     }
   }
 
