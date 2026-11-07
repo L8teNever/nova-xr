@@ -601,6 +601,23 @@ function updateColliders(dt) {
   });
 }
 
+/** Hands (or controller grips) push the hair and clothes of a VRM figure around. */
+function updateTouchSpheres(xr) {
+  if (!character.vrm) return;
+  input.slots.forEach((slot) => {
+    const live = xr && slot.connected && character.root.visible && !grab.isGrabbing(`xr${slot.index}`);
+    if (slot.isHand) {
+      for (const [name, radius] of HAND_COLLIDERS) {
+        const joint = slot.joint(name);
+        character.setTouchSphere(`${slot.index}:${name}`, live && joint ? joint.getWorldPosition(tmpA) : null, radius);
+      }
+      character.setTouchSphere(`${slot.index}:grip`, null);
+    } else {
+      character.setTouchSphere(`${slot.index}:grip`, live && slot.grip.visible ? slot.grip.getWorldPosition(tmpA) : null, 0.05);
+    }
+  });
+}
+
 // ---------- Desktop input ----------
 
 const pointer = { down: false, x: 0, y: 0, startYaw: 0, rotating: false };
@@ -840,6 +857,7 @@ renderer.setAnimationLoop((time, frame) => {
     physics.step(dt);
     physics.ragdoll.writeBones();
   }
+  updateTouchSpheres(xr);
   character.updateSecondary(dt);
   character.updateShadow(groundY);
   grab.updateMarkers(figureHands());

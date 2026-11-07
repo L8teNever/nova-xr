@@ -38,6 +38,19 @@ export const DEFAULT_PARAMS = {
   grabBreak: 0.65,
   grabRecoverTime: 0.9,
   shoulderLift: 18 * DEG,
+  // Get-up: first draw the feet in and sit low (squat), then rise out of the squat like a person would.
+  squatHeight: 0.52,
+  squatHip: 75 * DEG,
+  squatKnee: 118 * DEG,
+  squatSpine: 24 * DEG,
+  // Reactions to touches and pushes: the hit limb goes soft, the body flinches away, arms come up.
+  hitSoftness: 0.85,
+  hitSoftTime: 0.9,
+  hitLean: 16 * DEG,
+  hitNeck: 26 * DEG,
+  hitArms: 55 * DEG,
+  hitElbow: 55 * DEG,
+  hitImpulseFull: 150,
 };
 
 // strength in N·m for a 62 kg / 1.7 m figure; scaled to the actual model.
@@ -116,6 +129,8 @@ const tq2 = new CANNON.Quaternion();
 const tv1 = new CANNON.Vec3();
 const tv2 = new CANNON.Vec3();
 const tv3 = new CANNON.Vec3();
+const tq3 = new CANNON.Quaternion();
+const tv4 = new CANNON.Vec3();
 
 /** Rotation vector (axis * angle) of q, shortest path. */
 function rotationVector(q, out) {
@@ -158,6 +173,9 @@ export class ActiveRagdoll {
     this.tone = 1;
     this.onStateChange = null;
     this.onGrabRelease = null;
+    this.hits = [];
+    this.soft = new Map();
+    this.react = { lean: new CANNON.Vec3(), arms: 0, neck: new CANNON.Vec3() };
     this.strength = 1;
     this.grabs = {};
     this._time = 0;
@@ -181,6 +199,8 @@ export class ActiveRagdoll {
     this.segments = [];
     this.joints = [];
     this.grabs = {};
+    this.hits = [];
+    this.soft.clear();
     this._ordered = null;
     this.byId.clear();
     this.state = "off";
@@ -346,6 +366,7 @@ export class ActiveRagdoll {
       depth: depthOf(spec.bone),
     };
     body.userData = { segment: spec.id };
+    body.addEventListener("collide", (event) => this._onContact(segment, event));
     this.segments.push(segment);
     this.byId.set(spec.id, segment);
   }
@@ -623,6 +644,98 @@ export class ActiveRagdoll {
     }
     if (!target) return;
     target.applyImpulse(impulse, point.vsub(target.position));
+    const seg = this.byId.get(target.userData?.segment);
+    if (seg) this.registerHit(seg, clampAbs(impulse.length() / this.params.hitImpulseFull, 1) * 0.85 + 0.15, impulse.x, impulse.z);
+  }
+
+  /** A hand touched a body segment: react in proportion to how fast the hand was moving. */
+  _onContact(segment, event) {
+    const other = event.body;
+    if (!other || other.collisionFilterGroup !== COLLISION.HAND || this.state === "off") return;
+    const speed = other.velocity.length();
+    const strength = clampAbs(0.12 + speed / 2.5, 1);
+    const pos = segment.body.position;
+    this.registerHit(segment, strength, pos.x - other.position.x + other.velocity.x * 0.2, pos.z - other.position.z + other.velocity.z * 0.2);
+  }
+
+  /**
+   * Remember a touch or push on `segment`; (dx, dz) is the horizontal direction the contact pushes towards.
+   * The hit segment and its neighbours go soft for a moment, and the body flinches (see _updateReaction).
+   */
+  registerHit(segment, strength, dx = 0, dz = 0) {
+    if (!this.active) return;
+    const len = Math.hypot(dx, dz);
+    const dir = len > 1e-6 ? { x: dx / len, z: dz / len } : { x: 0, z: 0 };
+    this.hits.push({ id: segment.id, kind: segment.kind, strength, dir, age: 0 });
+    if (this.hits.length > 8) this.hits.shift();
+    const bump = (id, k) => this.soft.set(id, Math.max(this.soft.get(id) || 0, strength * k));
+    bump(segment.id, 1);
+    if (segment.parent) bump(segment.parent, 0.55);
+    for (const other of this.segments) if (other.parent === segment.id) bump(other.id, 0.55);
+  }
+
+  _updateReaction(h) {
+    const P = this.params;
+    const r = this.react;
+    r.lean.set(0, 0, 0);
+    r.neck.set(0, 0, 0);
+    r.arms = 0;
+    for (let i = this.hits.length - 1; i >= 0; i -= 1) {
+      const hit = this.hits[i];
+      hit.age += h;
+      if (hit.age > 1.3) {
+        this.hits.splice(i, 1);
+        continue;
+      }
+      // quick flinch in, slow recovery out
+      const e = smoothstep(hit.age / 0.08) * (1 - smoothstep((hit.age - 0.12) / 1.1));
+      const k = hit.strength * e;
+      const trunk = hit.kind === "torso" || hit.kind === "pelvis" || hit.kind === "head";
+      r.lean.x += hit.dir.x * k * (trunk ? 1 : 0.45);
+      r.lean.z += hit.dir.z * k * (trunk ? 1 : 0.45);
+      r.neck.x += hit.dir.x * k * (hit.kind === "head" ? 1.4 : 0.8);
+      r.neck.z += hit.dir.z * k * (hit.kind === "head" ? 1.4 : 0.8);
+      r.arms += k * (trunk ? 1 : 0.35);
+    }
+    for (const v of [r.lean, r.neck]) {
+      const m = Math.hypot(v.x, v.z);
+      if (m > 1) v.scale(1 / m, v);
+    }
+    r.arms = Math.min(1, r.arms);
+    for (const [id, value] of this.soft) {
+      const next = value - h / P.hitSoftTime;
+      if (next <= 0) this.soft.delete(id);
+      else this.soft.set(id, next);
+    }
+  }
+
+  /** Flinch on top of the animated target: lean the trunk/neck towards the push and lift the arms. */
+  _applyReaction(joint, desired) {
+    const P = this.params;
+    const r = this.react;
+    const kind = joint.spec.joint;
+    let vec = null;
+    let angle = 0;
+    if (kind === "spine") [vec, angle] = [r.lean, P.hitLean];
+    else if (kind === "neck") [vec, angle] = [r.neck, P.hitNeck];
+    if (vec) {
+      const m = Math.hypot(vec.x, vec.z);
+      if (m < 1e-4) return;
+      // lean towards d: rotate about (up x d)
+      tv3.set(vec.z / m, 0, -vec.x / m);
+      tq3.setFromAxisAngle(tv3, angle * m);
+      tq3.mult(desired, desired);
+      return;
+    }
+    if (kind === "shoulder" && r.arms > 1e-3) {
+      const fwd = this.byId.get("pelvis").body.quaternion.vmult(this.pelvisForwardLocal, tv4);
+      fwd.y = 0;
+      if (fwd.length() < 1e-6) return;
+      fwd.normalize();
+      tv3.set(fwd.z, 0, -fwd.x);
+      tq3.setFromAxisAngle(tv3, -P.hitArms * r.arms);
+      tq3.mult(desired, desired);
+    }
   }
 
   /** One controller update; call once before every fixed physics substep. */
@@ -669,6 +782,8 @@ export class ActiveRagdoll {
     if (standing) this._updateStepping(h, com, vel, feet);
     else if (this.step) this._endStep();
 
+    this._crouch = gettingUp ? crouchProfile(this._stateTime / P.getUpTime) : 0;
+    this._updateReaction(h);
     this._solveArmIk(h);
     for (const joint of this.joints) this._driveJoint(joint, h);
     this._driveGrabs(h);
@@ -880,6 +995,12 @@ export class ActiveRagdoll {
       const swingLeg = joint.spec.id.startsWith(this.step.side) && (joint.spec.joint === "hip" || joint.spec.joint === "knee");
       if (swingLeg) tone *= 0.35;
     }
+    const softness = this.soft.get(joint.child.id);
+    if (softness) {
+      // legs and spine keep the figure upright: they only give a little, limbs and neck go properly soft
+      const keep = joint.spec.joint === "hip" || joint.spec.joint === "knee" || joint.spec.joint === "ankle" || joint.spec.joint === "spine" ? 0.35 : 1;
+      tone *= 1 - this.params.hitSoftness * keep * Math.min(1, softness);
+    }
     const impulse = joint.strength * tone * h;
 
     if (joint.def.hinge) {
@@ -896,6 +1017,8 @@ export class ActiveRagdoll {
       if (this.step && joint.spec.joint === "knee" && joint.spec.id.startsWith(this.step.side)) {
         thetaT += joint.sign * 45 * DEG * Math.sin(Math.PI * Math.min(1, this.step.t / P.stepTime));
       }
+      if (this._crouch > 0 && joint.spec.joint === "knee") thetaT += joint.sign * P.squatKnee * this._crouch;
+      if (this.react.arms > 1e-3 && joint.spec.joint === "elbow") thetaT += joint.sign * P.hitElbow * this.react.arms;
       const [lo, hi] = joint.def.hinge;
       const flexT = Math.min(hi, Math.max(lo, joint.sign * thetaT));
       const desired = clampAbs((joint.sign * flexT - theta) / P.responseTime, maxSpeed);
@@ -927,6 +1050,8 @@ export class ActiveRagdoll {
       joint.parent.target.conjugate(tq1);
       tq1.mult(joint.child.target, tq2);
       A.quaternion.mult(tq2, tq1);
+      if (this._crouch > 0) this._applySquat(joint, tq1);
+      if (this.hits.length) this._applyReaction(joint, tq1);
       tq1.mult(B.quaternion.conjugate(tq2), tq2);
     }
     const rv = rotationVector(tq2, tv1);
@@ -941,6 +1066,21 @@ export class ActiveRagdoll {
       setBound(motor, impulse);
     }
     if (joint.restRel) this._limitTwist(joint, h);
+  }
+
+  /** Bend hips and spine forward (about the pelvis' lateral axis) on top of the animated target while squatting. */
+  _applySquat(joint, desired) {
+    const kind = joint.spec.joint;
+    const angle = kind === "hip" ? this.params.squatHip : kind === "spine" ? this.params.squatSpine : 0;
+    if (!angle) return;
+    const fwd = this.byId.get("pelvis").body.quaternion.vmult(this.pelvisForwardLocal, tv4);
+    fwd.y = 0;
+    if (fwd.length() < 1e-6) return;
+    fwd.normalize();
+    // lateral = up x forward; flexing the thigh/torso forward is a negative rotation about it
+    tv3.set(fwd.z, 0, -fwd.x);
+    tq3.setFromAxisAngle(tv3, -angle * this._crouch);
+    tq3.mult(desired, desired);
   }
 
   _limitTwist(joint, h) {
@@ -998,7 +1138,12 @@ export class ActiveRagdoll {
     if (gettingUp) {
       const pelvis = this.byId.get("pelvis").body;
       const goal = this._getUp;
-      const targetY = goal.startY + (this.groundY + this.standPelvisHeight - goal.startY) * u;
+      const squatY = this.groundY + this.standPelvisHeight * this.params.squatHeight;
+      const standY = this.groundY + this.standPelvisHeight;
+      const t = this._stateTime / this.params.getUpTime;
+      const targetY = t < 0.5
+        ? goal.startY + (squatY - goal.startY) * smoothstep(t / 0.5)
+        : squatY + (standY - squatY) * smoothstep((t - 0.5) / 0.5);
       const err = [goal.x - pelvis.position.x, targetY - pelvis.position.y, goal.z - pelvis.position.z];
       for (let i = 0; i < 3; i += 1) {
         eqs[i].enabled = true;
@@ -1089,6 +1234,11 @@ export class ActiveRagdoll {
     this.step = null;
     this.setState("gettingUp");
   }
+}
+
+/** 0 = standing, 1 = deep squat: sink in over the first 40 % of the get-up, rise out of it from 55 % on. */
+function crouchProfile(t) {
+  return smoothstep(t / 0.4) * (1 - smoothstep((t - 0.55) / 0.45));
 }
 
 function clampAbs(value, max) {

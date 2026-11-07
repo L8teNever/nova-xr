@@ -3,13 +3,14 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
 import { KTX2Loader } from "three/addons/loaders/KTX2Loader.js";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
-import { VRMLoaderPlugin, VRMUtils } from "@pixiv/three-vrm";
+import { VRMLoaderPlugin, VRMSpringBoneCollider, VRMSpringBoneColliderShapeSphere, VRMUtils } from "@pixiv/three-vrm";
 import { mapFromVrm, mapHumanoid } from "./humanoid-map.js";
 
 const THREE_CDN = "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/libs";
 const IDLE_PATTERN = /idle|stand|breath/i;
 const SKIP_PATTERN = /t-?pose|a-?pose|bind/i;
 const BLEND_TIME = 0.35;
+const CLOTH_PATTERN = /cloth|tops?\b|shirt|jacket|dress|coat|hoodie|sweater/i;
 
 let sharedLoader = null;
 
@@ -62,6 +63,9 @@ export class Character {
     this.entry = null;
     this.idleTime = 0;
     this.blend = null;
+    this.touchers = new Map();
+    this.touchGroup = null;
+    this.shield = [];
 
     if (typeof document !== "undefined") {
       this.shadow = new THREE.Mesh(
@@ -128,6 +132,7 @@ export class Character {
 
     this._faceForward();
     this._normalizeSize();
+    this._buildClothShield();
     this._setupIdle(gltf.animations || []);
     this.root.scale.setScalar(this.scale);
     this.update(0);
@@ -237,7 +242,127 @@ export class Character {
 
   /** Secondary motion (VRM spring bones) after the final pose is known. */
   updateSecondary(delta) {
+    for (const collider of this.shield) collider.updateWorldMatrix(false, false);
     this.vrm?.update(Math.min(delta, 1 / 30));
+  }
+
+  /**
+   * VRM body colliders hug the body, but shirts are often wider: long hair then sinks into the back of the
+   * clothes. Measure the back surface of the clothing mesh and cover it with small spring-bone colliders.
+   */
+  _buildClothShield() {
+    const manager = this.vrm?.springBoneManager;
+    const h = this.humanoid.bones;
+    const top = h.upperChest || h.chest || h.spine;
+    if (!manager || !h.hips || !top || !h.neck) return;
+    this.root.updateMatrixWorld(true);
+    const toRoot = new THREE.Matrix4().copy(this.root.matrixWorld).invert();
+    const rootPos = (bone) => bone.getWorldPosition(new THREE.Vector3()).applyMatrix4(toRoot);
+    const yMin = rootPos(h.hips).y;
+    const yMax = rootPos(h.neck).y;
+    const armX = h.leftUpperArm && h.rightUpperArm
+      ? Math.min(Math.abs(rootPos(h.leftUpperArm).x), Math.abs(rootPos(h.rightUpperArm).x))
+      : Infinity;
+    const step = 0.05 * (this.height / 1.7);
+    const rows = Math.max(1, Math.ceil((yMax - yMin) / step));
+    const cols = 7;
+    const back = Array.from({ length: rows }, () => ({ min: Infinity, max: -Infinity, cells: new Array(cols).fill(Infinity) }));
+    const v = new THREE.Vector3();
+    let found = false;
+    this.model.traverse((mesh) => {
+      if (!mesh.isSkinnedMesh || !mesh.geometry.index) return;
+      const materials = [].concat(mesh.material);
+      const index = mesh.geometry.index;
+      for (const group of mesh.geometry.groups.length ? mesh.geometry.groups : [{ start: 0, count: index.count, materialIndex: 0 }]) {
+        if (!CLOTH_PATTERN.test(materials[group.materialIndex]?.name || "")) continue;
+        for (let i = group.start; i < group.start + group.count; i += 1) {
+          mesh.getVertexPosition(index.getX(i), v).applyMatrix4(mesh.matrixWorld).applyMatrix4(toRoot);
+          if (v.y < yMin || v.y > yMax || Math.abs(v.x) > armX * 0.92) continue;
+          const row = back[Math.min(rows - 1, Math.floor((v.y - yMin) / step))];
+          row.min = Math.min(row.min, v.x);
+          row.max = Math.max(row.max, v.x);
+          found = true;
+        }
+      }
+    });
+    if (!found) return;
+    // second pass: back-most depth (smallest z) per column of each row
+    this.model.traverse((mesh) => {
+      if (!mesh.isSkinnedMesh || !mesh.geometry.index) return;
+      const materials = [].concat(mesh.material);
+      const index = mesh.geometry.index;
+      for (const group of mesh.geometry.groups.length ? mesh.geometry.groups : [{ start: 0, count: index.count, materialIndex: 0 }]) {
+        if (!CLOTH_PATTERN.test(materials[group.materialIndex]?.name || "")) continue;
+        for (let i = group.start; i < group.start + group.count; i += 1) {
+          mesh.getVertexPosition(index.getX(i), v).applyMatrix4(mesh.matrixWorld).applyMatrix4(toRoot);
+          if (v.y < yMin || v.y > yMax || Math.abs(v.x) > armX * 0.92) continue;
+          const row = back[Math.min(rows - 1, Math.floor((v.y - yMin) / step))];
+          if (!(row.max > row.min)) continue;
+          const col = Math.min(cols - 1, Math.floor(((v.x - row.min) / (row.max - row.min)) * cols));
+          row.cells[col] = Math.min(row.cells[col], v.z);
+        }
+      }
+    });
+
+    const radius = 0.05 * (this.height / 1.7);
+    const chain = [h.hips, h.spine, h.chest, h.upperChest].filter(Boolean);
+    const group = { name: "nova-cloth", colliders: [] };
+    for (let r = 0; r < rows; r += 1) {
+      const row = back[r];
+      if (!(row.max > row.min)) continue;
+      const y = yMin + (r + 0.5) * step;
+      for (let c = 0; c < cols; c += 1) {
+        if (!Number.isFinite(row.cells[c])) continue;
+        const x = row.min + ((c + 0.5) / cols) * (row.max - row.min);
+        const world = new THREE.Vector3(x, y, row.cells[c] + radius).applyMatrix4(this.root.matrixWorld);
+        // attach to the highest torso bone that is not above this height
+        let bone = chain[0];
+        for (const candidate of chain) if (rootPos(candidate).y <= y) bone = candidate;
+        bone.updateWorldMatrix(true, false);
+        const collider = new VRMSpringBoneCollider(new VRMSpringBoneColliderShapeSphere({ radius }));
+        collider.position.copy(bone.worldToLocal(world));
+        bone.add(collider);
+        collider.updateWorldMatrix(true, false);
+        group.colliders.push(collider);
+        this.shield.push(collider);
+      }
+    }
+    for (const joint of manager.joints) joint.colliderGroups = [...joint.colliderGroups, group];
+    manager.setInitState();
+  }
+
+  /**
+   * Let hands touch the hair and clothes: each id is a sphere in world space that spring bones (hair, skirt,
+   * ...) collide with. `null` removes the sphere (parked far away so the collider list never changes).
+   */
+  setTouchSphere(id, position, radius = 0.03) {
+    const manager = this.vrm?.springBoneManager;
+    if (!manager) return;
+    if (!this.touchGroup) this._createTouchGroup(manager);
+    let entry = this.touchers.get(id);
+    if (!entry) {
+      const shape = new VRMSpringBoneColliderShapeSphere({ radius });
+      const collider = new VRMSpringBoneCollider(shape);
+      this.touchGroup.colliders.push(collider);
+      entry = { collider, shape };
+      this.touchers.set(id, entry);
+    }
+    if (position) {
+      entry.shape.radius = radius;
+      entry.collider.position.copy(position);
+    } else {
+      entry.collider.position.set(0, -1000, 0);
+    }
+    entry.collider.updateWorldMatrix(true, false);
+  }
+
+  _createTouchGroup(manager) {
+    this.touchGroup = { name: "nova-touch", colliders: [] };
+    for (const joint of manager.joints) {
+      joint.colliderGroups = [...joint.colliderGroups, this.touchGroup];
+      // Hair strands are points: a little thickness keeps fingers from slipping through.
+      joint.settings.hitRadius = Math.max(joint.settings.hitRadius || 0, 0.015);
+    }
   }
 
   /** Remember the current (simulated) pose and fade from it into the animation. */
@@ -317,6 +442,9 @@ export class Character {
     this.mixer?.stopAllAction();
     this.model = null;
     this.vrm = null;
+    this.touchers.clear();
+    this.touchGroup = null;
+    this.shield = [];
     this.mixer = null;
     this.idleAction = null;
     this.restPose.clear();
